@@ -51,7 +51,10 @@
   <p class="error">{error}</p>
 {:else if job}
   <div class="head">
-    <h1>{job.name}</h1>
+    <h1>
+      {job.name}
+      {#if !job.enabled}<StatusBadge status="disabled" />{/if}
+    </h1>
     <button class="primary" onclick={runNow} disabled={starting || job.running}>
       {job.running ? 'Running…' : 'Run now'}
     </button>

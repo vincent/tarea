@@ -150,6 +150,8 @@ func (j *Job) expand(lookup Lookup) error {
 }
 
 // Validate checks semantic constraints and reports every problem at once.
+//
+//nolint:cyclop // each property is validated
 func (j Job) Validate() error {
 	var errs []error
 	add := func(format string, args ...any) {

@@ -59,7 +59,7 @@ func newTransport(ctx context.Context, srv config.MCPServer) (mcp.Transport, err
 }
 
 func buildEnv(extra map[string]string) []string {
-	var env []string
+	env := make([]string, 0, len(inheritedEnv)+len(extra))
 	for _, k := range inheritedEnv {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
@@ -139,7 +139,7 @@ func (s *session) Close() error {
 // flatten renders a tool result as text: text parts verbatim, anything else as
 // a short placeholder (binary payloads are useless to the model).
 func flatten(res *mcp.CallToolResult) string {
-	var parts []string
+	parts := make([]string, 0, len(res.Content))
 	for _, c := range res.Content {
 		if t, ok := c.(*mcp.TextContent); ok {
 			parts = append(parts, t.Text)

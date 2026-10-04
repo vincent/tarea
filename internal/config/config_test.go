@@ -52,6 +52,17 @@ func TestParse_ValidAppliesDefaultsAndExpansion(t *testing.T) {
 	}
 }
 
+func TestParse_EnabledFalse(t *testing.T) {
+	t.Parallel()
+	j, err := config.Parse("gigs", []byte("enabled: false"+validJob), lookup(map[string]string{"KEY": "k1", "CHAT": "42"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.IsEnabled() {
+		t.Fatal("enabled: false must disable the job")
+	}
+}
+
 func TestParse_Errors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
