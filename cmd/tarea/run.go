@@ -17,7 +17,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	data := dataFlag(fs)
-	dry := fs.Bool("dry-run", false, "print the result instead of sending it to the sinks")
+	dry := fs.Bool("dry-run", false, "print the result instead of sending it to the sinks (seen keys and memory edits are not saved)")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("parse flags: %w", err)
 	}

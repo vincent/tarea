@@ -166,11 +166,12 @@ func snippet(b []byte) string {
 // --- wire format -----------------------------------------------------------
 
 type wireRequest struct {
-	Model    string        `json:"model"`
-	Models   []string      `json:"models,omitempty"`
-	Messages []wireMessage `json:"messages"`
-	Tools    []wireTool    `json:"tools,omitempty"`
-	Usage    wireUsageOpt  `json:"usage"`
+	Model     string        `json:"model"`
+	Models    []string      `json:"models,omitempty"`
+	Messages  []wireMessage `json:"messages"`
+	Tools     []wireTool    `json:"tools,omitempty"`
+	MaxTokens int           `json:"max_tokens,omitempty"`
+	Usage     wireUsageOpt  `json:"usage"`
 }
 
 type wireUsageOpt struct {
@@ -224,7 +225,7 @@ type wireResponse struct {
 }
 
 func (c *OpenRouter) buildBody(req Request) wireRequest {
-	w := wireRequest{Model: req.Model, Usage: wireUsageOpt{Include: true}}
+	w := wireRequest{Model: req.Model, MaxTokens: req.MaxTokens, Usage: wireUsageOpt{Include: true}}
 	if len(req.Fallbacks) > 0 {
 		w.Models = append([]string{req.Model}, req.Fallbacks...)
 	}

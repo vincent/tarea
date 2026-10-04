@@ -52,6 +52,7 @@ model: anthropic/claude-sonnet-4.5
 fallbacks: [openai/gpt-5-mini]  # OpenRouter tries these if the model fails
 budget_usd: 0.10                # hard cap per run (default 0.10)
 max_steps: 8                    # LLM calls per run (default 8); the last one cannot call tools
+max_tokens: 0                   # output cap per model reply (default 0 = provider default)
 enabled: true                   # default true
 prompt: |
   ...
@@ -64,7 +65,9 @@ sinks:
 - Unknown keys are errors. All problems in a file are reported at once.
 - `${VAR}` is expanded in MCP commands/env/url/headers and sink options, from the process environment first and `data/.env` second. An undefined variable is an error. The prompt is never expanded.
 - The final model message (the one without tool calls) is the digest sent to the sinks. If it is exactly `NOTHING_NEW`, nothing is sent; the run is still logged.
-- A run stopped by budget or step limit is delivered with a `(partial run, stopped: ...)` notice and shown as `partial` in the panel.
+- A run stopped by budget, step limit, tool errors or a cut-off reply (`max_tokens`) is delivered with a `(partial run, stopped: ...)` notice, even if the model produced no final text, and shown as `partial` in the panel. A cut-off reply ends with `[truncated response]`.
+- `memory_*` and `seen_add` changes are staged during the run and saved only after delivery succeeded (or there was nothing to deliver). If delivery fails, the run is an `error` and the next run sees the same items again. `--dry-run` saves nothing.
+- A failed run sends a short failure notice to the job's sinks: on the first failure after a success, then at most once every 6 hours while it keeps failing. A successful run resets this. Runs cancelled by shutdown do not alert.
 
 ### Built-in tools
 

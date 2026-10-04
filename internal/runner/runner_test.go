@@ -247,3 +247,125 @@ func TestRun_MCPConnectFailure(t *testing.T) {
 		t.Fatalf("sum=%+v err=%v", sum, err)
 	}
 }
+
+func readState(t *testing.T, e *env, file string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(e.dir, "state", "gigs", file))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func stateCalls() agenttest.Step {
+	return agenttest.Calls(0,
+		llm.ToolCall{ID: "1", Name: "memory_append", Arguments: `{"note":"n"}`},
+		llm.ToolCall{ID: "2", Name: "seen_add", Arguments: `{"keys":["gig-1"]}`},
+	)
+}
+
+func TestRun_FailedDeliveryDoesNotCommitSeenOrMemory(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, stateCalls(), agenttest.Text("digest", 0))
+	e.snk.err = errors.New("telegram down")
+
+	if _, err := e.r.Run(context.Background(), "gigs", runner.TriggerCron); err == nil {
+		t.Fatal("want delivery error")
+	}
+	if got := readState(t, e, "seen.jsonl"); got != "" {
+		t.Fatalf("seen committed despite failed delivery: %q", got)
+	}
+	if got := readState(t, e, "memory.md"); got != "" {
+		t.Fatalf("memory committed despite failed delivery: %q", got)
+	}
+}
+
+func TestRun_DryRunDoesNotCommitState(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, stateCalls(), agenttest.Text("digest", 0))
+	e.r.DryRun = &bytes.Buffer{}
+
+	if _, err := e.r.Run(context.Background(), "gigs", runner.TriggerCLI); err != nil {
+		t.Fatal(err)
+	}
+	if readState(t, e, "seen.jsonl") != "" || readState(t, e, "memory.md") != "" {
+		t.Fatal("dry run must not write state")
+	}
+}
+
+func TestRun_NothingNewStillCommitsState(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, stateCalls(), agenttest.Text(agent.NothingNew, 0))
+
+	if _, err := e.r.Run(context.Background(), "gigs", runner.TriggerCron); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readState(t, e, "seen.jsonl"), "gig-1") {
+		t.Fatal("state must be committed when there is nothing to deliver")
+	}
+}
+
+func TestRun_PartialRunWithoutTextIsStillAnnounced(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, agenttest.Step{Resp: llm.Response{
+		Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "library__top_artists", Arguments: "{}"}}},
+		Usage:   llm.Usage{CostUSD: 5},
+	}})
+
+	sum, err := e.r.Run(context.Background(), "gigs", runner.TriggerCron)
+	if err != nil || sum.Status != runlog.StatusPartial || !sum.Delivered {
+		t.Fatalf("sum=%+v err=%v", sum, err)
+	}
+	if len(e.snk.msgs) != 1 || !strings.Contains(e.snk.msgs[0].Text, "stopped: budget") {
+		t.Fatalf("msgs = %+v", e.snk.msgs)
+	}
+}
+
+func TestRun_FailureAlertIsRateLimitedAndResets(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, agenttest.Step{Err: errors.New("bad key")}, agenttest.Step{Err: errors.New("bad key")},
+		agenttest.Text("fine", 0), agenttest.Step{Err: errors.New("bad key")})
+	var now = time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+	e.r.Now = func() time.Time { return now }
+	run := func() { _, _ = e.r.Run(context.Background(), "gigs", runner.TriggerCron) }
+	alerts := func() int {
+		n := 0
+		for _, m := range e.snk.msgs {
+			if strings.Contains(m.Text, "failed") {
+				n++
+			}
+		}
+		return n
+	}
+
+	run()
+	if alerts() != 1 || !strings.Contains(e.snk.msgs[0].Text, "bad key") {
+		t.Fatalf("first failure must alert: %+v", e.snk.msgs)
+	}
+	now = now.Add(time.Hour)
+	run() // still failing, within 6h.
+	if alerts() != 1 {
+		t.Fatalf("repeat failure must be rate-limited: %+v", e.snk.msgs)
+	}
+	now = now.Add(time.Hour)
+	run() // success resets the streak.
+	now = now.Add(time.Minute)
+	run() // new failure after success alerts immediately.
+	if alerts() != 2 {
+		t.Fatalf("failure after recovery must alert again: %+v", e.snk.msgs)
+	}
+}
+
+func TestRun_NoAlertWhenCancelled(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, agenttest.Text("x", 0))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := e.r.Run(ctx, "gigs", runner.TriggerCron); err == nil {
+		t.Fatal("want cancellation error")
+	}
+	if len(e.snk.msgs) != 0 {
+		t.Fatalf("shutdown cancel must not alert: %+v", e.snk.msgs)
+	}
+}

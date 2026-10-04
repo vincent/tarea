@@ -173,3 +173,29 @@ func TestUsageAdd(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestChat_MaxTokensAndFinishReason(t *testing.T) {
+	t.Parallel()
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(`{"model":"m","choices":[{"finish_reason":"length","message":{"role":"assistant","content":"cut"}}]}`))
+	}))
+	defer srv.Close()
+
+	c, _ := newClient(srv.URL)
+	resp, err := c.Chat(context.Background(), llm.Request{Model: "m", MaxTokens: 256, Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["max_tokens"] != float64(256) || resp.FinishReason != "length" {
+		t.Fatalf("max_tokens=%v finish=%q", got["max_tokens"], resp.FinishReason)
+	}
+
+	if _, err = c.Chat(context.Background(), llm.Request{Model: "m", Messages: []llm.Message{{Role: llm.RoleUser, Content: "hi"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["max_tokens"]; ok {
+		t.Fatal("max_tokens must be omitted when unset")
+	}
+}

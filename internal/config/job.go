@@ -31,6 +31,7 @@ type Job struct {
 	Fallbacks []string    `yaml:"fallbacks"`
 	BudgetUSD float64     `yaml:"budget_usd"`
 	MaxSteps  int         `yaml:"max_steps"`
+	MaxTokens int         `yaml:"max_tokens"`
 	Prompt    string      `yaml:"prompt"`
 	MCP       []MCPServer `yaml:"mcp"`
 	Memory    Memory      `yaml:"memory"`
@@ -161,6 +162,9 @@ func (j Job) Validate() error {
 	}
 	if j.BudgetUSD < 0 {
 		add("budget_usd must be positive")
+	}
+	if j.MaxTokens < 0 {
+		add("max_tokens must be >= 0")
 	}
 	if j.MaxSteps < 1 {
 		add("max_steps must be >= 1")

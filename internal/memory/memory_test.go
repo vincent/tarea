@@ -125,3 +125,78 @@ func TestSeen_ConcurrentAdds(t *testing.T) {
 		t.Fatalf("persisted len = %d (duplicate lines written?)", reloaded.Len())
 	}
 }
+
+func TestStagedStore_NothingOnDiskUntilCommit(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "memory.md")
+	base := memory.New(path, 1)
+	if err := base.Append("old"); err != nil {
+		t.Fatal(err)
+	}
+
+	st := base.Stage()
+	if err := st.Append("new"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.Read(); got != "- old\n- new\n" {
+		t.Fatalf("staged read = %q", got)
+	}
+	if got, _ := base.Read(); got != "- old\n" {
+		t.Fatalf("disk must be untouched before Commit: %q", got)
+	}
+	if err := st.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := base.Read(); got != "- old\n- new\n" {
+		t.Fatalf("after commit = %q", got)
+	}
+}
+
+func TestStagedStore_CapAndCleanCommit(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "memory.md")
+	st := memory.New(path, 1).Stage()
+
+	if err := st.Replace(string(make([]byte, 2048))); !errors.Is(err, memory.ErrOverCap) {
+		t.Fatalf("want ErrOverCap, got %v", err)
+	}
+	if err := st.Commit(); err != nil { // nothing staged: must not create the file.
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("file must not exist: %v", err)
+	}
+}
+
+func TestStagedSeen_CommitPersists(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "seen.jsonl")
+	now := func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	base, err := memory.OpenSeen(path, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = base.Add("a"); err != nil {
+		t.Fatal(err)
+	}
+
+	st := base.Stage()
+	if err = st.Add("a", " b ", "b", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !st.Has("a") || !st.Has("b") || base.Has("b") {
+		t.Fatal("staged keys must be visible to the stage only")
+	}
+
+	reopened, _ := memory.OpenSeen(path, now)
+	if reopened.Has("b") {
+		t.Fatal("staged key leaked to disk before Commit")
+	}
+	if err = st.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _ = memory.OpenSeen(path, now)
+	if !reopened.Has("b") || reopened.Len() != 2 {
+		t.Fatalf("after commit len=%d", reopened.Len())
+	}
+}

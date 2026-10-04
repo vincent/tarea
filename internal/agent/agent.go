@@ -25,6 +25,9 @@ const NothingNew = "NOTHING_NEW"
 const (
 	maxToolOutputBytes = 16 << 10
 	maxConsecToolErrs  = 3
+
+	finishLength    = "length"
+	truncatedMarker = "\n\n[truncated response]"
 )
 
 // Provider is the LLM backend.
@@ -59,6 +62,7 @@ type Spec struct {
 	Fallbacks []string
 	BudgetUSD float64 // <= 0 means unlimited.
 	MaxSteps  int
+	MaxTokens int // <= 0 means provider default.
 }
 
 // Deps are the injected collaborators. Tools, Memory, Seen and Now are optional.
@@ -81,6 +85,7 @@ const (
 	StopBudget     StopReason = "budget"
 	StopCancelled  StopReason = "cancelled"
 	StopToolErrors StopReason = "tool_errors"
+	StopTruncated  StopReason = "truncated"
 )
 
 // Result is always returned, even alongside an error, so a failed run keeps its transcript.
@@ -187,6 +192,7 @@ func (l *loop) request(lastStep bool) llm.Request {
 		Model:     l.spec.Model,
 		Fallbacks: l.spec.Fallbacks,
 		Messages:  l.res.Messages,
+		MaxTokens: l.spec.MaxTokens,
 	}
 	if !lastStep { // on the last step force a text answer so the run always concludes.
 		req.Tools = l.tools
@@ -212,7 +218,10 @@ func (l *loop) run(ctx context.Context) (Result, error) {
 		l.record(resp)
 
 		calls := resp.Message.ToolCalls
+		truncated := resp.FinishReason == finishLength
 		switch {
+		case len(calls) == 0 && truncated:
+			return l.finish(StopTruncated, resp.Message.Content+truncatedMarker), nil
 		case len(calls) == 0:
 			return l.finish(StopDone, resp.Message.Content), nil
 		case last:
@@ -221,7 +230,11 @@ func (l *loop) run(ctx context.Context) (Result, error) {
 			return l.finish(StopBudget, resp.Message.Content), nil
 		}
 
-		l.execTools(ctx, calls)
+		if truncated { // the arguments are probably cut mid-JSON: do not run them.
+			l.rejectTruncated(calls)
+		} else {
+			l.execTools(ctx, calls)
+		}
 		if l.consecErrs >= maxConsecToolErrs {
 			return l.finish(StopToolErrors, ""), nil
 		}
@@ -268,6 +281,20 @@ func (l *loop) execTools(ctx context.Context, calls []llm.ToolCall) {
 			Role:       llm.RoleTool,
 			ToolCallID: call.ID,
 			Content:    truncate(out, maxToolOutputBytes),
+		})
+	}
+}
+
+// rejectTruncated answers every call of a cut-off turn with an error so the
+// transcript stays well formed and the model can retry with shorter output.
+func (l *loop) rejectTruncated(calls []llm.ToolCall) {
+	l.consecErrs++
+	l.deps.Log.Warn("model reply truncated by output limit, tool calls skipped", "calls", len(calls))
+	for _, call := range calls {
+		l.res.Messages = append(l.res.Messages, llm.Message{
+			Role:       llm.RoleTool,
+			ToolCallID: call.ID,
+			Content:    "error: response truncated (output token limit); retry with shorter output",
 		})
 	}
 }

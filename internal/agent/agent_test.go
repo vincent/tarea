@@ -362,3 +362,40 @@ func TestRun_Validation(t *testing.T) {
 		})
 	}
 }
+
+func TestRun_TruncatedFinalReplyIsMarked(t *testing.T) {
+	t.Parallel()
+	step := agenttest.Text("half a dig", 0)
+	step.Resp.FinishReason = "length"
+	p := &agenttest.Provider{Steps: []agenttest.Step{step}}
+	s := spec()
+	s.MaxTokens = 128
+
+	res, err := agent.Run(context.Background(), s, agent.Deps{Provider: p})
+	if err != nil || res.Stop != agent.StopTruncated || !strings.HasSuffix(res.Final, "[truncated response]") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if p.Requests[0].MaxTokens != 128 {
+		t.Fatalf("max tokens not forwarded: %d", p.Requests[0].MaxTokens)
+	}
+}
+
+func TestRun_TruncatedToolCallsAreNotExecuted(t *testing.T) {
+	t.Parallel()
+	tools := &agenttest.Tools{Defs: []llm.ToolDef{{Name: "t__x"}}, Handler: func(string, json.RawMessage) (string, error) { return "r", nil }}
+	cut := agenttest.Calls(0, call("1", "t__x", `{"q": "unfinis`))
+	cut.Resp.FinishReason = "length"
+	p := &agenttest.Provider{Steps: []agenttest.Step{cut, agenttest.Text("recovered", 0)}}
+
+	res, err := agent.Run(context.Background(), spec(), agent.Deps{Provider: p, Tools: tools})
+	if err != nil || res.Stop != agent.StopDone || res.Final != "recovered" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(tools.Calls) != 0 {
+		t.Fatalf("truncated call must not run: %+v", tools.Calls)
+	}
+	msgs := toolMessages(res.Messages)
+	if len(msgs) != 1 || msgs[0].ToolCallID != "1" || !strings.Contains(msgs[0].Content, "truncated") {
+		t.Fatalf("tool messages: %+v", msgs)
+	}
+}

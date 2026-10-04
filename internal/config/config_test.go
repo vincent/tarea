@@ -66,6 +66,7 @@ func TestParse_Errors(t *testing.T) {
 		{"http no hosts", "schedule: '* * * * *'\nmodel: m\nprompt: p\nsinks: [{type: t}]\nmcp: [{name: a, builtin: http, allow: [request]}]", "hosts is required"},
 		{"mcp no allow", "schedule: '* * * * *'\nmodel: m\nprompt: p\nsinks: [{type: t}]\nmcp: [{name: a, command: [x]}]", "allow is required"},
 		{"mcp bad name", "schedule: '* * * * *'\nmodel: m\nprompt: p\nsinks: [{type: t}]\nmcp: [{name: a__b, command: [x], allow: ['*']}]", "invalid name"},
+		{"negative max_tokens", "schedule: '* * * * *'\nmodel: m\nprompt: p\nmax_tokens: -1\nsinks: [{type: t}]", "max_tokens"},
 		{"undefined var", "schedule: '* * * * *'\nmodel: m\nprompt: p\nsinks: [{type: t, chat_id: '${NOPE}'}]", "NOPE"},
 	}
 	for _, tt := range tests {

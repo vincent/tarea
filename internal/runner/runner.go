@@ -102,21 +102,27 @@ func (r *Runner) Run(ctx context.Context, name string, trig Trigger) (runlog.Sum
 	}}
 	r.Log.Info("run started", "job", job.Name, "run", rec.ID, "trigger", trig)
 
-	res, runErr := r.execute(ctx, job, stateDir)
+	res, st, runErr := r.execute(ctx, job, stateDir)
 	r.fill(&rec, res, runErr)
 
 	if runErr == nil {
 		runErr = r.deliver(ctx, job, &rec)
-		if runErr != nil {
-			rec.Status = runlog.StatusError
-			rec.Error = runErr.Error()
-		}
+	}
+	// Seen keys and memory edits reach disk only once the user has the digest,
+	// so a failed delivery is retried with the same items on the next run.
+	if runErr == nil && r.DryRun == nil && st != nil {
+		runErr = st.commit()
+	}
+	if runErr != nil {
+		rec.Status = runlog.StatusError
+		rec.Error = runErr.Error()
 	}
 
 	rec.EndedAt = r.Now().UTC()
 	if werr := r.Runs.Write(rec); werr != nil {
 		runErr = errors.Join(runErr, fmt.Errorf("runner: write run log: %w", werr))
 	}
+	r.alert(ctx, job, stateDir, rec.Summary)
 	r.Log.Info("run finished", "job", job.Name, "run", rec.ID, "status", rec.Status, "cost_usd", rec.CostUSD)
 	return rec.Summary, runErr
 }
@@ -133,19 +139,32 @@ func (r *Runner) defaults() {
 	}
 }
 
-func (r *Runner) execute(ctx context.Context, job config.Job, stateDir string) (agent.Result, error) {
-	mem := memory.New(filepath.Join(stateDir, job.Memory.File), job.Memory.MaxKB)
-	seen, err := memory.OpenSeen(filepath.Join(stateDir, "seen.jsonl"), r.Now)
+// staged holds the run's buffered state writes.
+type staged struct {
+	mem  *memory.StagedStore
+	seen *memory.StagedSeen
+}
+
+func (s *staged) commit() error {
+	return errors.Join(s.seen.Commit(), s.mem.Commit())
+}
+
+func (r *Runner) execute(ctx context.Context, job config.Job, stateDir string) (agent.Result, *staged, error) {
+	seenSet, err := memory.OpenSeen(filepath.Join(stateDir, "seen.jsonl"), r.Now)
 	if err != nil {
-		return agent.Result{}, fmt.Errorf("runner: %w", err)
+		return agent.Result{}, nil, fmt.Errorf("runner: %w", err)
+	}
+	st := &staged{
+		mem:  memory.New(filepath.Join(stateDir, job.Memory.File), job.Memory.MaxKB).Stage(),
+		seen: seenSet.Stage(),
 	}
 
-	deps := agent.Deps{Provider: r.Provider, Memory: mem, Seen: seen, Now: r.Now, Log: r.Log.With("job", job.Name)}
+	deps := agent.Deps{Provider: r.Provider, Memory: st.mem, Seen: st.seen, Now: r.Now, Log: r.Log.With("job", job.Name)}
 
 	if len(job.MCP) > 0 {
 		host, herr := mcpx.Open(ctx, job.MCP, r.Dial)
 		if herr != nil {
-			return agent.Result{}, fmt.Errorf("runner: %w", herr)
+			return agent.Result{}, nil, fmt.Errorf("runner: %w", herr)
 		}
 		defer func() {
 			if cerr := host.Close(); cerr != nil {
@@ -155,10 +174,11 @@ func (r *Runner) execute(ctx context.Context, job config.Job, stateDir string) (
 		deps.Tools = host
 	}
 
-	return agent.Run(ctx, agent.Spec{
+	res, err := agent.Run(ctx, agent.Spec{
 		Job: job.Name, Prompt: job.Prompt, Model: job.Model, Fallbacks: job.Fallbacks,
-		BudgetUSD: job.BudgetUSD, MaxSteps: job.MaxSteps,
+		BudgetUSD: job.BudgetUSD, MaxSteps: job.MaxSteps, MaxTokens: job.MaxTokens,
 	}, deps)
+	return res, st, err
 }
 
 func (r *Runner) fill(rec *runlog.Record, res agent.Result, runErr error) {
@@ -184,26 +204,38 @@ func (r *Runner) fill(rec *runlog.Record, res agent.Result, runErr error) {
 	}
 }
 
-// deliver sends the final message unless there is nothing to say.
+// deliver sends the final message unless there is nothing to say. A partial
+// run is always announced, even when the model produced no final text.
 func (r *Runner) deliver(ctx context.Context, job config.Job, rec *runlog.Record) error {
 	text := strings.TrimSpace(rec.Output)
-	if text == "" || text == agent.NothingNew {
+	if rec.Status == runlog.StatusPartial {
+		if text == "" {
+			text = "(no final message was produced)"
+		}
+		text = fmt.Sprintf("(partial run, stopped: %s)\n\n%s", rec.Stop, text)
+	} else if text == "" || text == agent.NothingNew {
 		return nil
 	}
-	if rec.Status == runlog.StatusPartial {
-		text = fmt.Sprintf("(partial run, stopped: %s)\n\n%s", rec.Stop, text)
-	}
-	msg := sink.Message{Job: job.Name, Text: text}
 
 	if r.DryRun != nil {
-		_, err := fmt.Fprintf(r.DryRun, "--- %s ---\n%s\n", job.Name, text)
-		if err != nil {
+		if _, err := fmt.Fprintf(r.DryRun, "--- %s ---\n%s\n", job.Name, text); err != nil {
 			return fmt.Errorf("runner: dry-run output: %w", err)
 		}
 		return nil
 	}
 
-	var errs []error
+	sent, err := r.sendAll(ctx, job, text)
+	rec.Delivered = err == nil && sent > 0
+	return err
+}
+
+// sendAll sends text to every sink of the job and reports how many accepted it.
+func (r *Runner) sendAll(ctx context.Context, job config.Job, text string) (int, error) {
+	msg := sink.Message{Job: job.Name, Text: text}
+	var (
+		errs []error
+		sent int
+	)
 	for _, sc := range job.Sinks {
 		s, err := r.Sinks.Build(sc.Type, sc.Options)
 		if err == nil {
@@ -211,8 +243,9 @@ func (r *Runner) deliver(ctx context.Context, job config.Job, rec *runlog.Record
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("deliver via %s: %w", sc.Type, err))
+			continue
 		}
+		sent++
 	}
-	rec.Delivered = len(errs) == 0
-	return errors.Join(errs...)
+	return sent, errors.Join(errs...)
 }

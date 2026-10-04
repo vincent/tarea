@@ -47,7 +47,7 @@ func cmdServe(args []string, stderr io.Writer) error {
 	defer stop()
 
 	sched := scheduler.New(r, a.log)
-	sched.Start(ctx)
+	sched.Start()
 	go sched.Watch(ctx, *reload, a.jobs)
 	go prune(ctx, a, *keep)
 
@@ -73,7 +73,8 @@ func cmdServe(args []string, stderr io.Writer) error {
 	case err = <-errc:
 		stop()
 	case <-ctx.Done():
-		a.log.Info("shutting down")
+		stop() // restore default signal handling: a second Ctrl-C kills the process.
+		a.log.Info("shutting down: waiting for in-flight runs", "grace", shutdownGrace)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace)

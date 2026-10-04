@@ -160,3 +160,118 @@ func (s *Seen) Len() int {
 	defer s.mu.Unlock()
 	return len(s.keys)
 }
+
+// StagedStore buffers memory edits in RAM so they only reach disk on Commit.
+// It applies the same size cap as Store. Not safe for concurrent use by itself
+// beyond its own mutex: one run owns one StagedStore.
+type StagedStore struct {
+	base    *Store
+	mu      sync.Mutex
+	pending string
+	dirty   bool
+}
+
+// Stage returns a buffered view of the store.
+func (s *Store) Stage() *StagedStore { return &StagedStore{base: s} }
+
+// Read returns the staged content when edited, else the file content.
+func (g *StagedStore) Read() (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.read()
+}
+
+func (g *StagedStore) read() (string, error) {
+	if g.dirty {
+		return g.pending, nil
+	}
+	return g.base.Read()
+}
+
+// Append stages a bullet note, failing with ErrOverCap past the cap.
+func (g *StagedStore) Append(note string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	cur, err := g.read()
+	if err != nil {
+		return err
+	}
+	if cur != "" && !strings.HasSuffix(cur, "\n") {
+		cur += "\n"
+	}
+	return g.stage(cur + "- " + strings.TrimSpace(note) + "\n")
+}
+
+// Replace stages new content, subject to the same cap.
+func (g *StagedStore) Replace(content string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.stage(content)
+}
+
+func (g *StagedStore) stage(content string) error {
+	if len(content) > g.base.maxBytes {
+		return fmt.Errorf("%w: %d > %d bytes; rewrite memory more compactly with memory_replace", ErrOverCap, len(content), g.base.maxBytes)
+	}
+	g.pending, g.dirty = content, true
+	return nil
+}
+
+// Commit writes the staged content to disk, if any edit happened.
+func (g *StagedStore) Commit() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if !g.dirty {
+		return nil
+	}
+	return g.base.Replace(g.pending)
+}
+
+// StagedSeen buffers new keys in RAM so they only reach disk on Commit.
+type StagedSeen struct {
+	base    *Seen
+	mu      sync.Mutex
+	pending map[string]struct{}
+	order   []string
+}
+
+// Stage returns a buffered view of the set.
+func (s *Seen) Stage() *StagedSeen {
+	return &StagedSeen{base: s, pending: make(map[string]struct{})}
+}
+
+// Has reports whether key is recorded or staged.
+func (g *StagedSeen) Has(key string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.pending[strings.TrimSpace(key)]; ok {
+		return true
+	}
+	return g.base.Has(key)
+}
+
+// Add stages keys; nothing is persisted until Commit.
+func (g *StagedSeen) Add(keys ...string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" {
+			continue
+		}
+		if _, ok := g.pending[k]; ok || g.base.Has(k) {
+			continue
+		}
+		g.pending[k] = struct{}{}
+		g.order = append(g.order, k)
+	}
+	return nil
+}
+
+// Commit persists the staged keys.
+func (g *StagedSeen) Commit() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.base.Add(g.order...)
+}

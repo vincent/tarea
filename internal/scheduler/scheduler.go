@@ -22,6 +22,9 @@ import (
 // ErrBusy is returned by RunNow when the job is already running.
 var ErrBusy = errors.New("scheduler: job already running")
 
+// ErrStopping is returned by RunNow once shutdown has begun.
+var ErrStopping = errors.New("scheduler: shutting down")
+
 // Runner executes a job (runner.Runner satisfies it).
 type Runner interface {
 	Run(ctx context.Context, job string, trig runner.Trigger) (runlog.Summary, error)
@@ -44,11 +47,17 @@ type Scheduler struct {
 	log    *slog.Logger
 	cron   *cron.Cron
 
-	mu      sync.Mutex
-	base    context.Context
-	entries map[string]entry
-	running map[string]bool
-	wg      sync.WaitGroup
+	// runCtx is the parent of every run. It is deliberately independent of the
+	// process signal context: a shutdown signal stops scheduling but lets runs
+	// finish, and runs are only cancelled when the grace period expires.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
+
+	mu       sync.Mutex
+	stopping bool
+	entries  map[string]entry
+	running  map[string]bool
+	wg       sync.WaitGroup
 }
 
 // New returns a stopped scheduler. A nil log discards output.
@@ -56,26 +65,33 @@ func New(r Runner, log *slog.Logger) *Scheduler {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	runCtx, cancelRun := context.WithCancel(context.Background())
 	return &Scheduler{
-		runner:  r,
-		log:     log,
-		cron:    cron.New(),
-		base:    context.Background(),
-		entries: make(map[string]entry),
-		running: make(map[string]bool),
+		runner:    r,
+		log:       log,
+		cron:      cron.New(),
+		runCtx:    runCtx,
+		cancelRun: cancelRun,
+		entries:   make(map[string]entry),
+		running:   make(map[string]bool),
 	}
 }
 
-// Start begins firing jobs. ctx bounds every run started from now on.
-func (s *Scheduler) Start(ctx context.Context) {
-	s.mu.Lock()
-	s.base = ctx
-	s.mu.Unlock()
+// Start begins firing jobs.
+func (s *Scheduler) Start() {
 	s.cron.Start()
 }
 
-// Stop stops scheduling and waits for in-flight runs until ctx expires.
+// abortWait is how long Stop waits for cancelled runs to unwind.
+const abortWait = 5 * time.Second
+
+// Stop stops scheduling, refuses new runs and waits for in-flight runs until
+// ctx expires. Runs still going at that point are cancelled.
 func (s *Scheduler) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	s.stopping = true
+	s.mu.Unlock()
+
 	stopped := s.cron.Stop()
 	done := make(chan struct{})
 	go func() {
@@ -85,8 +101,14 @@ func (s *Scheduler) Stop(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
+		s.cancelRun()
 		return nil
 	case <-ctx.Done():
+		s.cancelRun()
+		select {
+		case <-done:
+		case <-time.After(abortWait):
+		}
 		return fmt.Errorf("scheduler: shutdown deadline hit with runs in flight: %w", ctx.Err())
 	}
 }
@@ -127,15 +149,26 @@ func (s *Scheduler) Sync(jobs []config.Job) {
 // RunNow starts a manual run in the background.
 func (s *Scheduler) RunNow(name string) error {
 	if !s.begin(name) {
+		if s.isStopping() {
+			return ErrStopping
+		}
 		return ErrBusy
 	}
 	s.spawn(name, runner.TriggerManual)
 	return nil
 }
 
+func (s *Scheduler) isStopping() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopping
+}
+
 func (s *Scheduler) fire(name string, trig runner.Trigger) {
 	if !s.begin(name) {
-		s.log.Warn("skipping run: previous run still in progress", "job", name)
+		if !s.isStopping() {
+			s.log.Warn("skipping run: previous run still in progress", "job", name)
+		}
 		return
 	}
 	s.spawn(name, trig)
@@ -144,19 +177,17 @@ func (s *Scheduler) fire(name string, trig runner.Trigger) {
 func (s *Scheduler) begin(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.running[name] {
+	if s.stopping || s.running[name] {
 		return false
 	}
 	s.running[name] = true
+	s.wg.Add(1) // under mu so Stop can never Wait between begin and spawn.
 	return true
 }
 
 func (s *Scheduler) spawn(name string, trig runner.Trigger) {
-	s.mu.Lock()
-	ctx := s.base
-	s.mu.Unlock()
+	ctx := s.runCtx
 
-	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 		defer func() {

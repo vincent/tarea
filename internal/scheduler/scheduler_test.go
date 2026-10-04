@@ -49,7 +49,7 @@ func job(name, sched string, enabled bool) config.Job {
 func TestSync_AddsReplacesAndRemoves(t *testing.T) {
 	t.Parallel()
 	s := scheduler.New(&fakeRunner{}, nil)
-	s.Start(context.Background())
+	s.Start()
 	defer func() { _ = s.Stop(context.Background()) }()
 
 	s.Sync([]config.Job{job("a", "0 8 * * *", true), job("b", "*/5 * * * *", true), job("off", "0 8 * * *", false)})
@@ -74,7 +74,7 @@ func TestRunNow_RunsAndRejectsOverlap(t *testing.T) {
 	t.Parallel()
 	fr := &fakeRunner{block: make(chan struct{}), started: make(chan string, 1)}
 	s := scheduler.New(fr, nil)
-	s.Start(context.Background())
+	s.Start()
 
 	if err := s.RunNow("a"); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestStop_DeadlineWithRunInFlight(t *testing.T) {
 	t.Parallel()
 	fr := &fakeRunner{block: make(chan struct{}), started: make(chan string, 1)}
 	s := scheduler.New(fr, nil)
-	s.Start(context.Background())
+	s.Start()
 	if err := s.RunNow("a"); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestWatch_PicksUpChanges(t *testing.T) {
 	src := &fakeSource{}
 	src.set("v1", job("a", "0 8 * * *", true))
 	s := scheduler.New(&fakeRunner{}, nil)
-	s.Start(context.Background())
+	s.Start()
 	defer func() { _ = s.Stop(context.Background()) }()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -176,4 +176,76 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not met in time")
+}
+
+// ctxRunner blocks until released or until its run context is cancelled.
+type ctxRunner struct {
+	started   chan struct{}
+	release   chan struct{}
+	cancelled chan struct{}
+}
+
+func (c *ctxRunner) Run(ctx context.Context, _ string, _ runner.Trigger) (runlog.Summary, error) {
+	close(c.started)
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+		close(c.cancelled)
+	}
+	return runlog.Summary{}, nil
+}
+
+func newCtxRunner() *ctxRunner {
+	return &ctxRunner{started: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{})}
+}
+
+func TestStop_LetsInFlightRunFinishWithinGrace(t *testing.T) {
+	t.Parallel()
+	cr := newCtxRunner()
+	s := scheduler.New(cr, nil)
+	s.Start()
+	if err := s.RunNow("a"); err != nil {
+		t.Fatal(err)
+	}
+	<-cr.started
+
+	go func() {
+		time.Sleep(30 * time.Millisecond)
+		close(cr.release)
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := s.Stop(ctx); err != nil {
+		t.Fatalf("run finishing inside the grace must not error: %v", err)
+	}
+	select {
+	case <-cr.cancelled:
+		t.Fatal("run was cancelled although it finished within the grace")
+	default:
+	}
+	if err := s.RunNow("a"); !errors.Is(err, scheduler.ErrStopping) {
+		t.Fatalf("want ErrStopping after Stop, got %v", err)
+	}
+}
+
+func TestStop_CancelsRunsWhenGraceExpires(t *testing.T) {
+	t.Parallel()
+	cr := newCtxRunner()
+	s := scheduler.New(cr, nil)
+	s.Start()
+	if err := s.RunNow("a"); err != nil {
+		t.Fatal(err)
+	}
+	<-cr.started
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := s.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want deadline error, got %v", err)
+	}
+	select {
+	case <-cr.cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("run must be cancelled once the grace expires")
+	}
 }

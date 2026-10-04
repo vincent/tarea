@@ -327,6 +327,8 @@ func (s *server) mapErr(w http.ResponseWriter, err error) {
 		s.fail(w, http.StatusNotFound, "not found")
 	case errors.Is(err, scheduler.ErrBusy):
 		s.fail(w, http.StatusConflict, "job already running")
+	case errors.Is(err, scheduler.ErrStopping):
+		s.fail(w, http.StatusServiceUnavailable, "shutting down")
 	default:
 		// A job file that exists but is invalid surfaces as a 422 with the validation text.
 		if strings.HasPrefix(err.Error(), "job ") {

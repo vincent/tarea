@@ -42,6 +42,7 @@ type Request struct {
 	Fallbacks []string
 	Messages  []Message
 	Tools     []ToolDef
+	MaxTokens int // 0 = provider default.
 }
 
 // Usage reports tokens and the provider-reported cost for one call.
