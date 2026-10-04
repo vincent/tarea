@@ -20,9 +20,9 @@ Requirements: Go 1.24+, Node 22+ (only to build the panel).
 ```sh
 make build                      # builds the panel, embeds it, writes bin/tarea
 cp data/.env.example data/.env  # then fill in the keys
-bin/tarea validate             # checks every job file
-bin/tarea run --dry-run gigs   # runs once, prints the result instead of sending it
-bin/tarea serve                # scheduler + panel on http://127.0.0.1:8080
+bin/tarea validate              # checks every job file
+bin/tarea run --dry-run jobs-hunt  # runs once, prints the result instead of sending it
+bin/tarea serve                 # scheduler + panel on http://127.0.0.1:8080
 ```
 
 Without the panel: `go build ./cmd/tarea` works too; `/` then answers with a hint, the API is unaffected.
@@ -47,15 +47,15 @@ Everything is a plain file; delete `state/<name>` to reset a job. Set `--data` o
 ## Job reference
 
 ```yaml
-schedule: "0 8 * * *"        # 5-field cron, server local time
+schedule: "0 8 * * *"           # 5-field cron, server local time
 model: anthropic/claude-sonnet-4.5
-fallbacks: [openai/gpt-5-mini]   # OpenRouter tries these if the model fails
-budget_usd: 0.10             # hard cap per run (default 0.10)
-max_steps: 8                 # LLM calls per run (default 8); the last one cannot call tools
-enabled: true                # default true
+fallbacks: [openai/gpt-5-mini]  # OpenRouter tries these if the model fails
+budget_usd: 0.10                # hard cap per run (default 0.10)
+max_steps: 8                    # LLM calls per run (default 8); the last one cannot call tools
+enabled: true                   # default true
 prompt: |
   ...
-mcp: [...]                   # see below
+mcp: [...]                      # see below
 memory: {file: memory.md, max_kb: 64}
 sinks:
   - {type: telegram, chat_id: "${TG_CHAT}"}
@@ -78,10 +78,9 @@ mcp:
     command: ["./mcp-library", "--readonly"]
     env: {LIBRARY_TOKEN: "${LIBRARY_TOKEN}"}
     allow: [top_artists]
-  - name: events
-    url: https://example.com/mcp      # streamable HTTP
-    headers: {Authorization: "Bearer ${EVENTS_KEY}"}
-    allow: ["*"]
+  - name: jobshunt
+    url: https://mcp.dice.com/mcp     # streamable HTTP
+    allow: [search_jobs]
 ```
 
 - Exactly one of `command` (stdio) or `url` (HTTP) per server.
