@@ -4,6 +4,8 @@
 cover.out
 
 # runtime data (keep the sample job)
+/data/jobs/
+!/data/jobs/jobs-hunt
 /data/state/
 /data/runs.jsonl
 /data/.env

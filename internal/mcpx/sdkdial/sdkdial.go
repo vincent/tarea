@@ -30,7 +30,7 @@ var inheritedEnv = []string{"PATH", "HOME", "USER", "LANG", "TMPDIR", "SYSTEMROO
 
 // Dial connects to an MCP server over stdio (command) or streamable HTTP (url).
 func Dial(ctx context.Context, srv config.MCPServer) (mcpx.Session, error) {
-	transport, err := newTransport(srv)
+	transport, err := newTransport(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +42,10 @@ func Dial(ctx context.Context, srv config.MCPServer) (mcpx.Session, error) {
 	return &session{cs: cs}, nil
 }
 
-func newTransport(srv config.MCPServer) (mcp.Transport, error) {
+func newTransport(ctx context.Context, srv config.MCPServer) (mcp.Transport, error) {
 	switch {
 	case len(srv.Command) > 0:
-		cmd := exec.Command(srv.Command[0], srv.Command[1:]...)
+		cmd := exec.CommandContext(ctx, srv.Command[0], srv.Command[1:]...) //nolint:gosec // command comes from operator-owned job config; env is scrubbed by buildEnv
 		cmd.Env = buildEnv(srv.Env)
 		return &mcp.CommandTransport{Command: cmd}, nil
 	case srv.URL != "":
@@ -81,7 +81,7 @@ func (h headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for k, v := range h.headers {
 		req.Header.Set(k, v)
 	}
-	return h.base.RoundTrip(req)
+	return h.base.RoundTrip(req) //nolint:wrapcheck // transparent RoundTripper decorator; http.Client wraps the error
 }
 
 type session struct{ cs *mcp.ClientSession }

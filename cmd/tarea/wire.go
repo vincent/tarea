@@ -13,6 +13,7 @@ import (
 
 	"github.com/vincent/tarea/internal/config"
 	"github.com/vincent/tarea/internal/llm"
+	"github.com/vincent/tarea/internal/mcpx/httptool"
 	"github.com/vincent/tarea/internal/mcpx/sdkdial"
 	"github.com/vincent/tarea/internal/memory"
 	"github.com/vincent/tarea/internal/runlog"
@@ -75,7 +76,7 @@ func (a *app) runner(dry io.Writer) (*runner.Runner, error) {
 		DataDir:  a.dataDir,
 		Jobs:     a.jobs,
 		Provider: provider,
-		Dial:     sdkdial.Dial,
+		Dial:     httptool.Wrap(sdkdial.Dial, &http.Client{Timeout: 30 * time.Second}),
 		Sinks:    a.sinks,
 		Runs:     a.runs,
 		DryRun:   dry,

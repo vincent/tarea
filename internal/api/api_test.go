@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -81,7 +82,7 @@ func newHandler(ctl fakeControl, ui bool) http.Handler {
 
 func do(h http.Handler, method, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, path, http.NoBody))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), method, path, http.NoBody))
 	return rec
 }
 

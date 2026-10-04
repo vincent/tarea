@@ -37,14 +37,21 @@ type Job struct {
 	Sinks     []Sink      `yaml:"sinks"`
 }
 
-// MCPServer describes one MCP server a job may use: either a stdio command or
-// a remote HTTP endpoint. Allow is mandatory: use ["*"] to expose every tool.
+// BuiltinHTTP names the in-process HTTP tool (see mcpx/httptool).
+const BuiltinHTTP = "http"
+
+// MCPServer describes one MCP server a job may use: a stdio command, a remote
+// HTTP endpoint, or an in-process builtin. Allow is mandatory: use ["*"] to
+// expose every tool. For the http builtin, Hosts lists the reachable hosts and
+// Headers are sent with every request.
 type MCPServer struct {
 	Name    string            `yaml:"name"`
 	Command []string          `yaml:"command"`
 	Env     map[string]string `yaml:"env"`
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
+	Builtin string            `yaml:"builtin"`
+	Hosts   []string          `yaml:"hosts"`
 	Allow   []string          `yaml:"allow"`
 }
 
@@ -120,6 +127,9 @@ func (j *Job) expand(lookup Lookup) error {
 		for k := range s.Command {
 			s.Command[k] = exp(fmt.Sprintf("mcp[%d].command[%d]", i, k), s.Command[k])
 		}
+		for k := range s.Hosts {
+			s.Hosts[k] = exp(fmt.Sprintf("mcp[%d].hosts[%d]", i, k), s.Hosts[k])
+		}
 		s.URL = exp(fmt.Sprintf("mcp[%d].url", i), s.URL)
 		expMap(fmt.Sprintf("mcp[%d].env", i), s.Env)
 		expMap(fmt.Sprintf("mcp[%d].headers", i), s.Headers)
@@ -185,8 +195,20 @@ func (j Job) validateMCP() []error {
 		}
 		seen[s.Name] = true
 
-		if (len(s.Command) == 0) == (s.URL == "") {
-			add("exactly one of command or url is required")
+		transports := 0
+		for _, set := range []bool{len(s.Command) > 0, s.URL != "", s.Builtin != ""} {
+			if set {
+				transports++
+			}
+		}
+		if transports != 1 {
+			add("exactly one of command, url or builtin is required")
+		}
+		if s.Builtin != "" && s.Builtin != BuiltinHTTP {
+			add("unknown builtin %q (supported: %s)", s.Builtin, BuiltinHTTP)
+		}
+		if s.Builtin == BuiltinHTTP && len(s.Hosts) == 0 {
+			add("hosts is required for the http builtin")
 		}
 		if len(s.Allow) == 0 {
 			add("allow is required (use [\"*\"] to expose every tool)")
