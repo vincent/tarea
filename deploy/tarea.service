@@ -1,0 +1,25 @@
+# Install: copy the binary to /usr/local/bin/tarea, create /var/lib/tarea with
+# jobs/ and .env (chmod 600), then: systemctl enable --now tarea
+[Unit]
+Description=tarea - scheduled LLM jobs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tarea
+Group=tarea
+ExecStart=/usr/local/bin/tarea serve --data /var/lib/tarea --addr 127.0.0.1:8080
+WorkingDirectory=/var/lib/tarea
+Restart=on-failure
+RestartSec=5
+# Give in-flight runs time to finish on stop (matches the 2 minute shutdown grace).
+TimeoutStopSec=130
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/tarea
+
+[Install]
+WantedBy=multi-user.target

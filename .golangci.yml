@@ -1,0 +1,137 @@
+# golangci-lint v2. `make lint` runs it; CI pins the same version.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # correctness
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - wastedassign
+    - bodyclose
+    - noctx
+    - contextcheck
+    - nilerr
+    - errorlint
+    - exhaustive
+    - gosec
+    - copyloopvar
+    - intrange
+    - usestdlibvars
+    # errors
+    - errname
+    - wrapcheck
+    # style and maintainability
+    - revive
+    - gocritic
+    - godot
+    - misspell
+    - unconvert
+    - unparam
+    - prealloc
+    - perfsprint
+    - nolintlint
+    # complexity
+    - cyclop
+    - funlen
+    # tests
+    - testpackage
+    - paralleltest
+    - tparallel
+    # architecture: keep the agent loop pure
+    - depguard
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    cyclop:
+      max-complexity: 14
+    funlen:
+      lines: 80
+      statements: 50
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags: [diagnostic, style, performance]
+      disabled-checks: [hugeParam, rangeValCopy, sloppyReassign, whyNoLint]
+    govet:
+      enable-all: true
+      disable: [fieldalignment, shadow]
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: indent-error-flow
+        - name: unused-parameter
+        - name: context-as-argument
+    wrapcheck:
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Join(
+        - .Wrap(
+      ignore-package-globs:
+        - github.com/vincent/tarea/*
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    depguard:
+      rules:
+        agent-is-pure:
+          # The agent loop talks to the world only through injected interfaces.
+          files:
+            - "**/internal/agent/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: net/http
+              desc: internal/agent must stay I/O free; inject a Provider or ToolHost instead
+            - pkg: os
+              desc: internal/agent must stay I/O free; inject a Memory or Seen instead
+            - pkg: os/exec
+              desc: internal/agent must stay I/O free
+    testpackage:
+      skip-regexp: (internal|export)_test\.go
+
+  exclusions:
+    presets: [comments, std-error-handling, common-false-positives]
+    rules:
+      - path: _test\.go
+        linters: [funlen, wrapcheck, gosec, cyclop, unparam, errcheck, perfsprint]
+      - path: ^cmd/
+        linters: [testpackage] # main_test.go needs package main to reach run().
+      - path: ^internal/scheduler/scheduler\.go$
+        linters: [contextcheck] # cron callbacks carry no ctx; runs use the lifetime ctx given to Start.
+      - path: ^internal/sink/telegram/telegram\.go$
+        text: "G602" # pack() checks len(seps) == 0 before slicing; gosec cannot see it.
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/vincent/tarea)
+    goimports:
+      local-prefixes:
+        - github.com/vincent/tarea
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
