@@ -369,3 +369,25 @@ func TestRun_NoAlertWhenCancelled(t *testing.T) {
 		t.Fatalf("shutdown cancel must not alert: %+v", e.snk.msgs)
 	}
 }
+
+type blockingProvider struct{}
+
+func (blockingProvider) Chat(ctx context.Context, _ llm.Request) (llm.Response, error) {
+	<-ctx.Done()
+	return llm.Response{}, ctx.Err()
+}
+
+func TestRun_TimeoutStopsRunAndReleasesLock(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.r.Provider = blockingProvider{}
+	e.r.RunTimeout = 50 * time.Millisecond
+
+	sum, err := e.r.Run(context.Background(), "gigs", runner.TriggerManual)
+	if err == nil || sum.Status != runlog.StatusError {
+		t.Fatalf("want error run, got %+v, %v", sum, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(e.dir, "state", "gigs", ".lock")); !os.IsNotExist(statErr) {
+		t.Fatalf("lock not released: %v", statErr)
+	}
+}

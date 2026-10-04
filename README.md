@@ -143,7 +143,7 @@ Testing notes: every package takes its collaborators as interfaces, with fakes i
 ## Operations
 
 - A job file that becomes invalid is unscheduled (and logged) until it is fixed; valid jobs keep running. The jobs directory is polled every 5 s, no restart needed.
-- A job never overlaps itself: a cron tick during a run is skipped; `run` / the panel's button answer "already running". A stale lock (> 2 h) is taken over after a crash.
+- A job never overlaps itself: a cron tick during a run is skipped; `run` / the panel's button answer "already running". The running process refreshes its lock every 30 s, so a lock left by a crash is taken over after 2 min. A run is cut off after 30 min.
 - Run history is pruned daily to the newest 500 runs per job (`--keep-runs`).
 - `deploy/tarea.service` is a hardened systemd unit.
 

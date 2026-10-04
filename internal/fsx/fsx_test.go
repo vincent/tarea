@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,6 +100,61 @@ func TestTryLock_StaleIsTakenOver(t *testing.T) {
 		t.Fatalf("stale lock not taken over: %v", err)
 	}
 	_ = unlock()
+}
+
+func TestTryLock_HeartbeatKeepsLockAlive(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), ".lock")
+	stale := 200 * time.Millisecond
+	unlock, err := fsx.TryLock(path, stale, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * stale)
+	if _, err = fsx.TryLock(path, stale, time.Now); !errors.Is(err, fsx.ErrLocked) {
+		t.Fatalf("live lock was taken over: %v", err)
+	}
+	if err = unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if err = unlock(); err != nil {
+		t.Fatalf("second unlock: %v", err)
+	}
+	time.Sleep(stale)
+	if _, err = os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("lock reappeared after unlock: %v", err)
+	}
+}
+
+func TestTryLock_ConcurrentTakeoverHasOneWinner(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), ".lock")
+	if err := os.WriteFile(path, []byte("1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	var (
+		wg   sync.WaitGroup
+		wins atomic.Int32
+	)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if unlock, err := fsx.TryLock(path, time.Minute, time.Now); err == nil {
+				wins.Add(1)
+				_ = unlock
+			}
+		}()
+	}
+	wg.Wait()
+	if wins.Load() != 1 {
+		t.Fatalf("winners = %d, want 1", wins.Load())
+	}
 }
 
 func TestSafeJoin(t *testing.T) {

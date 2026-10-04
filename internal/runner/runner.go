@@ -50,7 +50,7 @@ type RunStore interface {
 }
 
 // Runner executes jobs. Construct it with a struct literal; all fields except
-// DryRun, Log, Now and LockStale are required.
+// DryRun, Log, Now, LockStale and RunTimeout are required.
 type Runner struct {
 	DataDir  string
 	Jobs     Jobs
@@ -63,11 +63,17 @@ type Runner struct {
 	DryRun io.Writer
 	Log    *slog.Logger
 	Now    func() time.Time
-	// LockStale is how long a lock file may live before it is considered abandoned.
+	// LockStale is how long a lock may go without a heartbeat before it is
+	// considered abandoned by a crashed process.
 	LockStale time.Duration
+	// RunTimeout bounds the agent loop of one run.
+	RunTimeout time.Duration
 }
 
-const defaultLockStale = 2 * time.Hour
+const (
+	defaultLockStale  = 2 * time.Minute
+	defaultRunTimeout = 30 * time.Minute
+)
 
 // Run executes one job. A Summary is returned whenever the run started, even
 // together with an error; failed runs are logged to the run store too.
@@ -102,7 +108,9 @@ func (r *Runner) Run(ctx context.Context, name string, trig Trigger) (runlog.Sum
 	}}
 	r.Log.Info("run started", "job", job.Name, "run", rec.ID, "trigger", trig)
 
-	res, st, runErr := r.execute(ctx, job, stateDir)
+	ectx, cancel := context.WithTimeout(ctx, r.RunTimeout)
+	res, st, runErr := r.execute(ectx, job, stateDir)
+	cancel()
 	r.fill(&rec, res, runErr)
 
 	if runErr == nil {
@@ -136,6 +144,9 @@ func (r *Runner) defaults() {
 	}
 	if r.LockStale == 0 {
 		r.LockStale = defaultLockStale
+	}
+	if r.RunTimeout == 0 {
+		r.RunTimeout = defaultRunTimeout
 	}
 }
 

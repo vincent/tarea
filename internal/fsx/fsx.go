@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -87,20 +88,22 @@ func AppendLine(path string, line []byte) error {
 }
 
 // TryLock creates an exclusive lock file at path. It never blocks: if the lock
-// is held it returns ErrLocked. A lock older than staleAfter (by file mtime) is
-// considered abandoned by a crashed process and is taken over.
-// The returned function releases the lock and is safe to call once.
+// is held it returns ErrLocked. While held, the lock's mtime is refreshed every
+// staleAfter/4 (heartbeat), so a lock whose mtime is older than staleAfter was
+// left by a crashed process and is taken over.
+// The returned function stops the heartbeat and releases the lock; it is safe
+// to call more than once.
 func TryLock(path string, staleAfter time.Duration, now func() time.Time) (func() error, error) {
 	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
 		return nil, fmt.Errorf("fsx: mkdir: %w", err)
 	}
 
-	for range 2 {
+	for range 3 {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, filePerm)
 		if err == nil {
 			_, _ = f.WriteString(strconv.Itoa(os.Getpid()))
 			_ = f.Close()
-			return func() error { return os.Remove(path) }, nil
+			return startHeartbeat(path, staleAfter, now), nil
 		}
 		if !errors.Is(err, fs.ErrExist) {
 			return nil, fmt.Errorf("fsx: lock %s: %w", path, err)
@@ -113,11 +116,68 @@ func TryLock(path string, staleAfter time.Duration, now func() time.Time) (func(
 		if now().Sub(info.ModTime()) <= staleAfter {
 			return nil, ErrLocked
 		}
-		if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-			return nil, fmt.Errorf("fsx: remove stale lock: %w", rmErr)
+		if err = takeOverStale(path, staleAfter, now); err != nil {
+			return nil, err
 		}
 	}
 	return nil, ErrLocked
+}
+
+// takeOverStale removes a lock judged stale. The lock is renamed away first:
+// rename is atomic, so of several concurrent takers only one gets the file. If
+// the file turns out fresh (a taker re-created it between our stat and rename)
+// it is linked back and ErrLocked is returned. A tiny window remains where the
+// link-back loses to yet another taker.
+func takeOverStale(path string, staleAfter time.Duration, now func() time.Time) error {
+	grave := fmt.Sprintf("%s.stale-%d-%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, grave); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // another taker won; the caller retries.
+		}
+		return fmt.Errorf("fsx: remove stale lock: %w", err)
+	}
+	if info, err := os.Stat(grave); err == nil && now().Sub(info.ModTime()) <= staleAfter {
+		_ = os.Link(grave, path)
+		_ = os.Remove(grave)
+		return ErrLocked
+	}
+	_ = os.Remove(grave)
+	return nil
+}
+
+// startHeartbeat keeps the lock's mtime fresh until the returned release
+// function is called. Release stops the heartbeat before removing the file so
+// a late tick can never touch a successor's lock.
+func startHeartbeat(path string, staleAfter time.Duration, now func() time.Time) func() error {
+	interval := max(staleAfter/4, time.Millisecond)
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-t.C:
+				ts := now()
+				if err := os.Chtimes(path, ts, ts); errors.Is(err, fs.ErrNotExist) {
+					return // lock removed under us: nothing left to refresh.
+				}
+			}
+		}
+	}()
+
+	var once sync.Once
+	return func() (err error) {
+		once.Do(func() {
+			close(done)
+			<-stopped
+			err = os.Remove(path)
+		})
+		return err
+	}
 }
 
 // SafeJoin joins rel under base and rejects absolute paths and any path that
