@@ -52,7 +52,6 @@ func newApp(dataDir string, stderr io.Writer) (*app, error) {
 	reg := sink.NewRegistry()
 	reg.Register("telegram", telegram.Factory(token, nil))
 
-	sdkdial.Version = version
 	return &app{
 		dataDir: dataDir,
 		lookup:  lookup,
@@ -77,7 +76,7 @@ func (a *app) runner(dry io.Writer) (*runner.Runner, error) {
 		Jobs:     a.jobs,
 		Provider: provider,
 		Speaker:  provider,
-		Dial:     httptool.Wrap(sdkdial.Dial, &http.Client{Timeout: 30 * time.Second}),
+		Dial:     httptool.Wrap(sdkdial.Dialer{Version: version}.Dial, &http.Client{Timeout: 30 * time.Second}),
 		Sinks:    a.sinks,
 		Runs:     a.runs,
 		DryRun:   dry,

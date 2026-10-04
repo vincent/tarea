@@ -21,20 +21,26 @@ import (
 	"github.com/vincent/tarea/internal/mcpx"
 )
 
-// Version is reported to servers; set via -ldflags.
-var Version = "dev"
+// Dialer connects to MCP servers, reporting Version as the client version.
+type Dialer struct {
+	Version string // empty means "dev"
+}
 
 // inheritedEnv is the only parent environment stdio servers receive, so job
 // secrets never leak to third-party MCP processes. Add more via the job's env.
 var inheritedEnv = []string{"PATH", "HOME", "USER", "LANG", "TMPDIR", "SYSTEMROOT"}
 
 // Dial connects to an MCP server over stdio (command) or streamable HTTP (url).
-func Dial(ctx context.Context, srv config.MCPServer) (mcpx.Session, error) {
+func (d Dialer) Dial(ctx context.Context, srv config.MCPServer) (mcpx.Session, error) {
 	transport, err := newTransport(ctx, srv)
 	if err != nil {
 		return nil, err
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "tarea", Version: Version}, nil)
+	version := d.Version
+	if version == "" {
+		version = "dev"
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "tarea", Version: version}, nil)
 	cs, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
