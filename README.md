@@ -4,6 +4,8 @@ A small scheduler for LLM jobs. Each job is one YAML file: a cron schedule, a pr
 
 It is deliberately **not** an agent framework. Code does the fetching, deduplication, budgeting and delivery; the model only does the judgment in between.
 
+![tarea panel](https://raw.githubusercontent.com/vincent/tarea/main/screenshot.png)
+
 ```
 cron ─► runner ─► agent loop ─► OpenRouter
                      │  ▲

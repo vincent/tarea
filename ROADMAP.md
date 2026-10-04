@@ -15,7 +15,9 @@ Scaffold complete through phases 0-7 (see boxes below). Verified in the build sa
 2. `make lint` with the real `sdkdial` included.
 3. A real end-to-end run: `tarea run --dry-run gigs` against OpenRouter and one real MCP server.
 
-**Open from phase 8:** per-job/global budget view, log redaction, Dockerfile, goreleaser, panel auth.
+**Since the scaffold:** Dockerfile and GHCR image workflow, bearer-token API guard (loopback Host/Origin checks without a token), `enabled: false` job flag (shown in the panel), in-process `http` builtin tool, audio sink option, context guards against memory overwrite, stale-job handling, partial-delivery handling, `go.sum` committed.
+
+**Open from phase 8:** per-job/global budget view, general log redaction, goreleaser, UI kill-switch button, systemd/Docker docs polish.
 
 ---
 
@@ -278,10 +280,10 @@ Optional later: `GET /api/events` (SSE) for live run status.
 **Done when:** one binary serves the panel; Playwright smoke passes against it.
 
 ### Phase 8: Hardening and release (1 day)
-- [ ] Per-job and global budget caps surfaced in UI; kill-switch (disable job from UI writes `enabled: false`).
-- [ ] Log redaction (tokens, bearer headers).
+- [ ] Per-job and global budget caps surfaced in UI; kill-switch (disable job from UI writes `enabled: false`). (partial: per-job `budget_usd` shown on job page; `enabled: false` honored and badged, but no UI toggle and no global cap)
+- [ ] Log redaction (tokens, bearer headers). (partial: Telegram errors strip the bot token URL; no general redaction)
 - [x] Cross-compile matrix: linux/amd64, linux/arm64, darwin/arm64, windows/amd64 via goreleaser. (Makefile + CI matrix; goreleaser not set up)
-- [ ] Sample `data/` dir, Dockerfile (scratch/distroless), systemd unit. (sample data and systemd unit done; Dockerfile open: stdio MCP servers need their runtimes, so scratch images only suit HTTP-only setups)
+- [x] Sample `data/` dir, Dockerfile, systemd unit. (multi-stage Dockerfile and `docker.yml` GHCR workflow added)
 - [x] README: quickstart, job reference, MCP guide.
 
 **Done when:** a fresh machine goes from release download to first Telegram digest in under 10 minutes.
@@ -313,7 +315,7 @@ Coverage targets: `agent` >= 90%, `sink`/`llm`/`mcpx`/`memory` >= 80%, rest best
 - [ ] Job files are the shareable unit: add `tarea jobs install <url|path>` and a `jobs/examples/` folder.
 - [ ] `Provider` interface already allows a second backend (direct Anthropic/OpenAI) without touching `agent`.
 - [ ] Additional sinks (ntfy, email, webhook, file digest): one file each, registered in `sink`.
-- [ ] Optional auth on the panel (static bearer token first, then OIDC).
+- [ ] Optional auth on the panel (static bearer token first, then OIDC). (bearer token done in `api/guard.go`; OIDC not built)
 - [ ] Optional per-job env/secret scopes.
 - [ ] Optional storage interface over files (so SQLite/Postgres is a drop-in if ever needed). **Do not build until needed.**
 - [ ] Versioned config schema (`apiVersion: 1`) and a JSON Schema for editor completion.
