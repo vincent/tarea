@@ -150,6 +150,24 @@ func TestStagedStore_NothingOnDiskUntilCommit(t *testing.T) {
 	if got, _ := base.Read(); got != "- old\n- new\n" {
 		t.Fatalf("after commit = %q", got)
 	}
+	if b, _ := os.ReadFile(path + ".bak"); string(b) != "- old\n" {
+		t.Fatalf("backup = %q", b)
+	}
+}
+
+func TestStagedStore_NoBackupOnFirstWrite(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "memory.md")
+	st := memory.New(path, 1).Stage()
+	if err := st.Append("a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("no backup expected: %v", err)
+	}
 }
 
 func TestStagedStore_CapAndCleanCommit(t *testing.T) {

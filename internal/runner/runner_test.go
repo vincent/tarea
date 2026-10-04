@@ -168,8 +168,9 @@ func TestRun_ProviderErrorIsLoggedAndNotDelivered(t *testing.T) {
 	if err == nil || sum.Status != runlog.StatusError || !strings.Contains(sum.Error, "provider down") {
 		t.Fatalf("sum=%+v err=%v", sum, err)
 	}
-	if len(e.snk.msgs) != 0 || !e.sess.closed {
-		t.Fatalf("msgs=%d closed=%v", len(e.snk.msgs), e.sess.closed)
+	// The only message is the failure alert, never a digest.
+	if len(e.snk.msgs) != 1 || !strings.Contains(e.snk.msgs[0].Text, "failed") || !e.sess.closed {
+		t.Fatalf("msgs=%+v closed=%v", e.snk.msgs, e.sess.closed)
 	}
 	if runs, _ := (&runlog.Store{Root: e.dir}).List("gigs", 0); len(runs) != 1 {
 		t.Fatal("failed run must be logged")

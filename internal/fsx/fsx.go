@@ -174,7 +174,9 @@ func startHeartbeat(path string, staleAfter time.Duration, now func() time.Time)
 		once.Do(func() {
 			close(done)
 			<-stopped
-			err = os.Remove(path)
+			if e := os.Remove(path); e != nil {
+				err = fmt.Errorf("remove lock: %w", e)
+			}
 		})
 		return err
 	}

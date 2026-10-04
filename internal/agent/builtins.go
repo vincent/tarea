@@ -95,6 +95,9 @@ func (b builtins) memoryReplace(args json.RawMessage) (string, error) {
 	if err := decode(args, &a); err != nil {
 		return "", err
 	}
+	if strings.TrimSpace(a.Content) == "" {
+		return "", errors.New("content must not be empty")
+	}
 	return "ok", b.mem.Replace(a.Content)
 }
 

@@ -52,23 +52,29 @@ func Guard(next http.Handler, o GuardOpts) http.Handler {
 			return
 		}
 
-		if !hosts[hostname(r.Host)] {
-			deny(w, http.StatusForbidden, "forbidden host")
+		if msg := loopbackDenial(r, hosts); msg != "" {
+			deny(w, http.StatusForbidden, msg)
 			return
-		}
-		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
-			deny(w, http.StatusForbidden, "cross-site request refused")
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" {
-			u, err := url.Parse(origin)
-			if err != nil || !strings.EqualFold(u.Host, r.Host) {
-				deny(w, http.StatusForbidden, "cross-origin request refused")
-				return
-			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// loopbackDenial returns the reason a tokenless request is refused, or "" if allowed.
+func loopbackDenial(r *http.Request, hosts map[string]bool) string {
+	if !hosts[hostname(r.Host)] {
+		return "forbidden host"
+	}
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		return "cross-site request refused"
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(u.Host, r.Host) {
+			return "cross-origin request refused"
+		}
+	}
+	return ""
 }
 
 func validBearer(header, token string) bool {

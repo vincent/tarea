@@ -9,6 +9,7 @@ import (
 )
 
 func TestGuard(t *testing.T) {
+	t.Parallel()
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	cases := []struct {
@@ -48,7 +49,8 @@ func TestGuard(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			req := httptest.NewRequest(c.method, c.path, nil)
+			t.Parallel()
+			req := httptest.NewRequestWithContext(t.Context(), c.method, c.path, http.NoBody)
 			req.Host = c.host
 			for k, v := range c.headers {
 				req.Header.Set(k, v)

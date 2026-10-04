@@ -225,6 +225,16 @@ func (g *StagedStore) Commit() error {
 	if !g.dirty {
 		return nil
 	}
+	// Keep one previous generation so a poisoned or wiped memory can be restored.
+	prev, err := g.base.Read()
+	if err != nil {
+		return err
+	}
+	if prev != "" {
+		if err := fsx.WriteFileAtomic(g.base.path+".bak", []byte(prev), 0o600); err != nil {
+			return fmt.Errorf("memory: backup: %w", err)
+		}
+	}
 	return g.base.Replace(g.pending)
 }
 

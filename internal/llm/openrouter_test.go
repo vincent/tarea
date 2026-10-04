@@ -178,6 +178,7 @@ func TestChat_MaxTokensAndFinishReason(t *testing.T) {
 	t.Parallel()
 	var got map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = nil // Decode merges into an existing map: start clean per request.
 		_ = json.NewDecoder(r.Body).Decode(&got)
 		_, _ = w.Write([]byte(`{"model":"m","choices":[{"finish_reason":"length","message":{"role":"assistant","content":"cut"}}]}`))
 	}))

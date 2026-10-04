@@ -286,7 +286,8 @@ func TestRun_MemoryInPromptAndMemoryTools(t *testing.T) {
 		agenttest.Calls(0,
 			call("1", "memory_append", `{"note":"moved to Lyon"}`),
 			call("2", "memory_append", `{"note":"this note is far too long to fit in the cap"}`),
-			call("3", "memory_replace", `{"content":"Bonobo fan, Lyon\n"}`),
+			call("3", "memory_replace", `{"content":"  "}`),
+			call("4", "memory_replace", `{"content":"Bonobo fan, Lyon\n"}`),
 		),
 		agenttest.Text("ok", 0),
 	}}
@@ -298,11 +299,12 @@ func TestRun_MemoryInPromptAndMemoryTools(t *testing.T) {
 	}
 
 	system := p.Requests[0].Messages[0].Content
-	if !strings.Contains(system, "likes Bonobo") || !strings.Contains(system, "2026-10-04T08:00:00Z") || !strings.Contains(system, agent.NothingNew) {
+	if !strings.Contains(system, "likes Bonobo") || !strings.Contains(system, "2026-10-04T08:00:00Z") || !strings.Contains(system, agent.NothingNew) ||
+		!strings.Contains(system, "<memory>\nlikes Bonobo") || !strings.Contains(system, "untrusted data") {
 		t.Fatalf("system prompt incomplete:\n%s", system)
 	}
 	tm := toolMessages(res.Messages)
-	if tm[0].Content != "ok" || !strings.HasPrefix(tm[1].Content, "error: ") {
+	if tm[0].Content != "ok" || !strings.HasPrefix(tm[1].Content, "error: ") || !strings.HasPrefix(tm[2].Content, "error: ") {
 		t.Fatalf("append results: %+v", tm)
 	}
 	if mem.Content != "Bonobo fan, Lyon\n" {
