@@ -200,3 +200,69 @@ func TestChat_MaxTokensAndFinishReason(t *testing.T) {
 		t.Fatal("max_tokens must be omitted when unset")
 	}
 }
+
+func TestSpeech_RequestShapeAndAudio(t *testing.T) {
+	t.Parallel()
+	var got map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-key" || r.URL.Path != "/audio/speech" {
+			t.Errorf("bad request: %s %v", r.URL.Path, r.Header)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "audio/mpeg")
+		_, _ = w.Write([]byte("ID3audio"))
+	}))
+	defer srv.Close()
+
+	c, _ := newClient(srv.URL)
+	audio, err := c.Speech(context.Background(), "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(audio) != "ID3audio" {
+		t.Fatalf("audio = %q", audio)
+	}
+	if got["model"] != llm.SpeechModel || got["input"] != "hello" || got["response_format"] != "mp3" {
+		t.Fatalf("body = %v", got)
+	}
+}
+
+func TestSpeech_RetriesOn429(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "2")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte("mp3"))
+	}))
+	defer srv.Close()
+
+	c, sleeps := newClient(srv.URL)
+	if _, err := c.Speech(context.Background(), "x"); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || len(*sleeps) != 1 || (*sleeps)[0] != 2*time.Second {
+		t.Fatalf("calls=%d sleeps=%v", calls.Load(), *sleeps)
+	}
+}
+
+func TestSpeech_BadResponses(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{"empty": "", "json error": `{"error":{"message":"nope"}}`}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+			c, _ := newClient(srv.URL)
+			if _, err := c.Speech(context.Background(), "x"); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}

@@ -10,13 +10,19 @@ import (
 
 // Message is one deliverable.
 type Message struct {
-	Job  string
-	Text string
+	Job   string
+	Text  string
+	Audio []byte // MP3 speech, set only for AudioSink.SendAudio.
 }
 
 // Sink delivers a message somewhere.
 type Sink interface {
 	Send(ctx context.Context, m Message) error
+}
+
+// AudioSink is implemented by sinks that can deliver an audio message.
+type AudioSink interface {
+	SendAudio(ctx context.Context, m Message) error
 }
 
 // Factory builds a Sink from the job's per-sink YAML options.

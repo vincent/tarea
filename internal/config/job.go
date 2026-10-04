@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/robfig/cron/v3"
@@ -66,6 +67,13 @@ type Memory struct {
 type Sink struct {
 	Type    string            `yaml:"type"`
 	Options map[string]string `yaml:",inline"`
+}
+
+// WantsAudio reports whether the sink also receives a spoken version of the
+// final message (`audio: true`).
+func (s Sink) WantsAudio() bool {
+	v, err := strconv.ParseBool(s.Options["audio"])
+	return err == nil && v
 }
 
 // IsEnabled reports whether the job should be scheduled (default true).
@@ -179,6 +187,11 @@ func (j Job) Validate() error {
 	for i, s := range j.Sinks {
 		if s.Type == "" {
 			add("sinks[%d].type is required", i)
+		}
+		if a, ok := s.Options["audio"]; ok {
+			if _, err := strconv.ParseBool(a); err != nil {
+				add("sinks[%d].audio must be true or false, got %q", i, a)
+			}
 		}
 	}
 	return errors.Join(errs...)

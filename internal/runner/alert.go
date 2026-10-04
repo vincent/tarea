@@ -52,7 +52,7 @@ func (r *Runner) alert(ctx context.Context, job config.Job, stateDir string, sum
 	}
 
 	text := fmt.Sprintf("tarea: job %q failed (run %s): %s", job.Name, sum.ID, clip(sum.Error, alertMaxError))
-	sent, err := r.sendAll(ctx, job, text)
+	sent, err := r.sendAll(ctx, job, text, false)
 	if err != nil {
 		r.Log.Warn("failure alert not fully delivered", "job", job.Name, "err", err)
 	}

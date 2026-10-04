@@ -3,6 +3,7 @@ package telegram_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -182,5 +183,54 @@ func TestNewValidationAndFactory(t *testing.T) {
 	}
 	if _, err := f(map[string]string{}); err == nil {
 		t.Fatal("factory must require chat_id")
+	}
+}
+
+func TestSendAudio_MultipartAndRetry(t *testing.T) {
+	t.Parallel()
+	var (
+		mu       sync.Mutex
+		calls    int
+		chat     string
+		fileData string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/botTOKEN/sendAudio" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"slow","parameters":{"retry_after":1}}`))
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("multipart: %v", err)
+			return
+		}
+		chat = r.FormValue("chat_id")
+		f, _, err := r.FormFile("audio")
+		if err != nil {
+			t.Errorf("audio file: %v", err)
+			return
+		}
+		b, _ := io.ReadAll(f)
+		fileData = string(b)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	var sleeps []time.Duration
+	s := newSink(t, srv.URL, &sleeps)
+	if err := s.SendAudio(context.Background(), sink.Message{Job: "gigs", Audio: []byte("mp3data")}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || chat != "42" || fileData != "mp3data" || len(sleeps) != 1 {
+		t.Fatalf("calls=%d chat=%q file=%q sleeps=%v", calls, chat, fileData, sleeps)
+	}
+	if err := s.SendAudio(context.Background(), sink.Message{Job: "gigs"}); err == nil {
+		t.Fatal("empty audio must fail")
 	}
 }

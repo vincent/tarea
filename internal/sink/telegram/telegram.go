@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,6 +88,56 @@ func (s *Sink) Send(ctx context.Context, m sink.Message) error {
 	return nil
 }
 
+// SendAudio uploads m.Audio (MP3) as an audio message captioned with the job.
+func (s *Sink) SendAudio(ctx context.Context, m sink.Message) error {
+	if len(m.Audio) == 0 {
+		return errors.New("telegram: empty audio")
+	}
+	for attempt := 0; ; attempt++ {
+		body, ctype, err := audioBody(s.cfg.ChatID, m)
+		if err != nil {
+			return fmt.Errorf("telegram: %w", err)
+		}
+		resp, status, err := s.postTo(ctx, "sendAudio", ctype, body)
+		if err != nil {
+			return fmt.Errorf("telegram: %w", err)
+		}
+		if resp.OK {
+			return nil
+		}
+		if status == http.StatusTooManyRequests && attempt < s.cfg.MaxRetries {
+			wait := time.Duration(max(resp.Parameters.RetryAfter, 1)) * time.Second
+			if err = s.cfg.Sleep(ctx, wait); err != nil {
+				return fmt.Errorf("telegram: %w", err)
+			}
+			continue
+		}
+		return fmt.Errorf("telegram: api error (status %d): %s", status, resp.Description)
+	}
+}
+
+func audioBody(chatID string, m sink.Message) (body []byte, contentType string, err error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	if err = w.WriteField("chat_id", chatID); err != nil {
+		return nil, "", fmt.Errorf("encode: %w", err)
+	}
+	if err = w.WriteField("title", m.Job); err != nil {
+		return nil, "", fmt.Errorf("encode: %w", err)
+	}
+	part, err := w.CreateFormFile("audio", "response.mp3")
+	if err != nil {
+		return nil, "", fmt.Errorf("encode: %w", err)
+	}
+	if _, err = part.Write(m.Audio); err != nil {
+		return nil, "", fmt.Errorf("encode: %w", err)
+	}
+	if err = w.Close(); err != nil {
+		return nil, "", fmt.Errorf("encode: %w", err)
+	}
+	return buf.Bytes(), w.FormDataContentType(), nil
+}
+
 type apiResponse struct {
 	OK          bool   `json:"ok"`
 	Description string `json:"description"`
@@ -106,7 +157,7 @@ func (s *Sink) sendOne(ctx context.Context, text string) error {
 	}
 
 	for attempt := 0; ; attempt++ {
-		resp, status, err := s.post(ctx, body)
+		resp, status, err := s.postTo(ctx, "sendMessage", "application/json", body)
 		if err != nil {
 			return err
 		}
@@ -124,13 +175,13 @@ func (s *Sink) sendOne(ctx context.Context, text string) error {
 	}
 }
 
-func (s *Sink) post(ctx context.Context, body []byte) (apiResponse, int, error) {
-	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", strings.TrimRight(s.cfg.BaseURL, "/"), s.cfg.Token)
+func (s *Sink) postTo(ctx context.Context, method, ctype string, body []byte) (apiResponse, int, error) {
+	endpoint := fmt.Sprintf("%s/bot%s/%s", strings.TrimRight(s.cfg.BaseURL, "/"), s.cfg.Token, method)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return apiResponse{}, 0, errors.New("build request failed")
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", ctype)
 
 	res, err := s.cfg.HTTP.Do(req)
 	if err != nil {

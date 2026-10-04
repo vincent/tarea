@@ -57,7 +57,7 @@ prompt: |
 mcp: [...]                      # see below
 memory: {file: memory.md, max_kb: 64}
 sinks:
-  - {type: telegram, chat_id: "${TG_CHAT}"}
+  - {type: telegram, chat_id: "${TG_CHAT}", audio: true}   # audio is optional
 ```
 
 - Unknown keys are errors. All problems in a file are reported at once.
@@ -92,6 +92,8 @@ mcp:
 ## Sinks
 
 `telegram`: `chat_id` per job, bot token from `TELEGRAM_BOT_TOKEN` (or a `token` option). Messages are plain text, split at paragraph/line/word boundaries to stay under Telegram's limit, with retry on 429. New sinks implement `sink.Sink` and register in `cmd/tarea/wire.go`.
+
+**Audio:** set `audio: true` on a sink (off by default) and, after the text of a successful run is delivered, it is also synthesized with OpenRouter (`fish-audio/s2.1-pro-free:free`, MP3, first 4000 characters) and sent as an audio message to that sink if it implements `sink.AudioSink` (Telegram does). Speech failures are logged and never fail the run. Partial runs and `NOTHING_NEW` get no audio.
 
 ## HTTP API
 

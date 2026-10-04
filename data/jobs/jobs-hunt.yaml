@@ -16,3 +16,4 @@ memory: {file: memory.md, max_kb: 128}
 sinks:
   - type: telegram
     chat_id: "${TG_CHAT}"
+    # audio: true

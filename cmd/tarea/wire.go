@@ -76,6 +76,7 @@ func (a *app) runner(dry io.Writer) (*runner.Runner, error) {
 		DataDir:  a.dataDir,
 		Jobs:     a.jobs,
 		Provider: provider,
+		Speaker:  provider,
 		Dial:     httptool.Wrap(sdkdial.Dial, &http.Client{Timeout: 30 * time.Second}),
 		Sinks:    a.sinks,
 		Runs:     a.runs,

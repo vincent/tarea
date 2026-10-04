@@ -49,8 +49,20 @@ type RunStore interface {
 	Write(rec runlog.Record) error
 }
 
+// Speaker turns text into audio (llm.OpenRouter satisfies it).
+type Speaker interface {
+	Speech(ctx context.Context, text string) ([]byte, error)
+}
+
+// maxSpeechRunes bounds the text sent to text-to-speech.
+const maxSpeechRunes = 4000
+
+// speechTimeout bounds text-to-speech and audio upload, independent of the run
+// deadline (the text has already been delivered by then).
+const speechTimeout = 2 * time.Minute
+
 // Runner executes jobs. Construct it with a struct literal; all fields except
-// DryRun, Log, Now, LockStale and RunTimeout are required.
+// DryRun, Speaker, Log, Now, LockStale and RunTimeout are required.
 type Runner struct {
 	DataDir  string
 	Jobs     Jobs
@@ -59,6 +71,9 @@ type Runner struct {
 	Sinks    SinkBuilder
 	Runs     RunStore
 
+	// Speaker, when set, makes each delivered final message also go out as audio
+	// to sinks that support it. Failures are logged, never fatal.
+	Speaker Speaker
 	// DryRun, when set, receives the final message instead of the sinks.
 	DryRun io.Writer
 	Log    *slog.Logger
@@ -235,17 +250,20 @@ func (r *Runner) deliver(ctx context.Context, job config.Job, rec *runlog.Record
 		return nil
 	}
 
-	sent, err := r.sendAll(ctx, job, text)
+	sent, err := r.sendAll(ctx, job, text, rec.Status == runlog.StatusOK)
 	rec.Delivered = err == nil && sent > 0
 	return err
 }
 
 // sendAll sends text to every sink of the job and reports how many accepted it.
-func (r *Runner) sendAll(ctx context.Context, job config.Job, text string) (int, error) {
+// With speak set, audio follows to the sinks that took the text and opted in
+// with `audio: true`.
+func (r *Runner) sendAll(ctx context.Context, job config.Job, text string, speak bool) (int, error) {
 	msg := sink.Message{Job: job.Name, Text: text}
 	var (
-		errs []error
-		sent int
+		errs      []error
+		sent      int
+		audioSink []sink.AudioSink
 	)
 	for _, sc := range job.Sinks {
 		s, err := r.Sinks.Build(sc.Type, sc.Options)
@@ -257,6 +275,38 @@ func (r *Runner) sendAll(ctx context.Context, job config.Job, text string) (int,
 			continue
 		}
 		sent++
+		if !sc.WantsAudio() {
+			continue
+		}
+		if as, ok := s.(sink.AudioSink); ok {
+			audioSink = append(audioSink, as)
+		} else if speak {
+			r.Log.Warn("audio: true ignored, sink cannot send audio", "job", job.Name, "sink", sc.Type)
+		}
+	}
+	if speak && r.Speaker != nil && len(audioSink) > 0 {
+		r.sendAudio(ctx, job.Name, text, audioSink)
 	}
 	return sent, errors.Join(errs...)
+}
+
+// sendAudio synthesizes text once and sends it to each sink. Errors are only
+// logged: the text already reached the user.
+func (r *Runner) sendAudio(ctx context.Context, job, text string, sinks []sink.AudioSink) {
+	if rs := []rune(text); len(rs) > maxSpeechRunes {
+		text = string(rs[:maxSpeechRunes])
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), speechTimeout)
+	defer cancel()
+	audio, err := r.Speaker.Speech(ctx, text)
+	if err != nil {
+		r.Log.Warn("tts failed", "job", job, "err", err)
+		return
+	}
+	msg := sink.Message{Job: job, Audio: audio}
+	for _, as := range sinks {
+		if err = as.SendAudio(ctx, msg); err != nil {
+			r.Log.Warn("deliver audio", "job", job, "err", err)
+		}
+	}
 }

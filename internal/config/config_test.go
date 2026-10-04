@@ -164,3 +164,32 @@ func TestLoadDotEnv(t *testing.T) {
 		t.Fatal("expected parse error")
 	}
 }
+
+func TestParse_SinkAudioFlag(t *testing.T) {
+	t.Parallel()
+	job := func(sink string) string {
+		return "schedule: \"0 8 * * *\"\nmodel: m\nprompt: p\nsinks: [" + sink + "]"
+	}
+	tests := []struct {
+		sink    string
+		want    bool
+		wantErr string
+	}{
+		{"{type: telegram, audio: true}", true, ""},
+		{"{type: telegram, audio: false}", false, ""},
+		{"{type: telegram}", false, ""},
+		{"{type: telegram, audio: maybe}", false, "audio must be true or false"},
+	}
+	for _, tt := range tests {
+		j, err := config.Parse("j", []byte(job(tt.sink)), lookup(nil))
+		if tt.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("%s: err = %v", tt.sink, err)
+			}
+			continue
+		}
+		if err != nil || j.Sinks[0].WantsAudio() != tt.want {
+			t.Fatalf("%s: %+v %v", tt.sink, j.Sinks, err)
+		}
+	}
+}

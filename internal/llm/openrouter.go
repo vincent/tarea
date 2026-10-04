@@ -16,7 +16,14 @@ import (
 // DefaultBaseURL is the OpenRouter API root.
 const DefaultBaseURL = "https://openrouter.ai/api/v1"
 
-const maxResponseBytes = 8 << 20
+const (
+	maxResponseBytes = 8 << 20
+	maxAudioBytes    = 20 << 20
+
+	// SpeechModel is the OpenRouter text-to-speech model.
+	SpeechModel  = "fish-audio/s2.1-pro-free:free"
+	speechFormat = "mp3"
+)
 
 // APIError is a non-retryable (or exhausted) provider error.
 type APIError struct {
@@ -71,24 +78,56 @@ func (c *OpenRouter) Chat(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, fmt.Errorf("openrouter: encode request: %w", err)
 	}
+	raw, err := c.withRetry(ctx, "/chat/completions", body, maxResponseBytes)
+	if err != nil {
+		return Response{}, err
+	}
+	return parseResponse(raw)
+}
 
+// Speech synthesizes text to MP3 audio with the free Fish Audio model.
+func (c *OpenRouter) Speech(ctx context.Context, text string) ([]byte, error) {
+	body, err := json.Marshal(map[string]string{
+		"model":           SpeechModel,
+		"input":           text,
+		"response_format": speechFormat,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: encode request: %w", err)
+	}
+	raw, err := c.withRetry(ctx, "/audio/speech", body, maxAudioBytes)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, errors.New("openrouter: empty audio response")
+	}
+	// Audio is binary; JSON means an error payload with a 200.
+	if t := bytes.TrimLeft(raw, "\ufeff \t\r\n"); len(t) > 0 && t[0] == '{' {
+		return nil, fmt.Errorf("openrouter: speech returned JSON: %s", snippet(raw))
+	}
+	return raw, nil
+}
+
+// withRetry POSTs body to path, retrying on 429, 5xx and network errors.
+func (c *OpenRouter) withRetry(ctx context.Context, path string, body []byte, limit int64) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
 		if attempt > 0 {
-			if err = c.Sleep(ctx, c.delay(attempt, lastErr)); err != nil {
-				return Response{}, err
+			if err := c.Sleep(ctx, c.delay(attempt, lastErr)); err != nil {
+				return nil, err
 			}
 		}
-		resp, retry, err := c.do(ctx, body)
+		raw, retry, err := c.do(ctx, path, body, limit)
 		if err == nil {
-			return resp, nil
+			return raw, nil
 		}
 		lastErr = err
 		if !retry {
-			return Response{}, err
+			return nil, err
 		}
 	}
-	return Response{}, fmt.Errorf("openrouter: giving up after %d retries: %w", c.MaxRetries, lastErr)
+	return nil, fmt.Errorf("openrouter: giving up after %d retries: %w", c.MaxRetries, lastErr)
 }
 
 type retryAfterError struct {
@@ -107,10 +146,10 @@ func (c *OpenRouter) delay(attempt int, last error) time.Duration {
 	return c.Backoff << (attempt - 1)
 }
 
-func (c *OpenRouter) do(ctx context.Context, body []byte) (resp Response, retry bool, err error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/chat/completions", bytes.NewReader(body))
+func (c *OpenRouter) do(ctx context.Context, path string, body []byte, limit int64) (raw []byte, retry bool, err error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(body))
 	if err != nil {
-		return Response{}, false, fmt.Errorf("openrouter: build request: %w", err)
+		return nil, false, fmt.Errorf("openrouter: build request: %w", err)
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -124,27 +163,29 @@ func (c *OpenRouter) do(ctx context.Context, body []byte) (resp Response, retry 
 	res, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
-			return Response{}, false, fmt.Errorf("openrouter: %w", ctx.Err())
+			return nil, false, fmt.Errorf("openrouter: %w", ctx.Err())
 		}
-		return Response{}, true, fmt.Errorf("openrouter: request: %w", err) // network error: retry.
+		return nil, true, fmt.Errorf("openrouter: request: %w", err) // network error: retry.
 	}
 	defer func() { _ = res.Body.Close() }()
 
-	raw, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes))
+	raw, err = io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
-		return Response{}, true, fmt.Errorf("openrouter: read body: %w", err)
+		return nil, true, fmt.Errorf("openrouter: read body: %w", err)
+	}
+	if int64(len(raw)) > limit {
+		return nil, false, fmt.Errorf("openrouter: response exceeds %d bytes", limit)
 	}
 
 	if res.StatusCode == http.StatusTooManyRequests || res.StatusCode >= http.StatusInternalServerError {
 		apiErr := &APIError{Status: res.StatusCode, Message: snippet(raw)}
-		return Response{}, true, &retryAfterError{APIError: apiErr, after: parseRetryAfter(res.Header.Get("Retry-After"))}
+		return nil, true, &retryAfterError{APIError: apiErr, after: parseRetryAfter(res.Header.Get("Retry-After"))}
 	}
 	if res.StatusCode != http.StatusOK {
-		return Response{}, false, &APIError{Status: res.StatusCode, Message: snippet(raw)}
+		return nil, false, &APIError{Status: res.StatusCode, Message: snippet(raw)}
 	}
 
-	out, err := parseResponse(raw)
-	return out, false, err
+	return raw, false, nil
 }
 
 func parseRetryAfter(v string) time.Duration {

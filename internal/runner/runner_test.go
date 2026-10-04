@@ -392,3 +392,111 @@ func TestRun_TimeoutStopsRunAndReleasesLock(t *testing.T) {
 		t.Fatalf("lock not released: %v", statErr)
 	}
 }
+
+type audioSink struct {
+	recordingSink
+	audio []sink.Message
+}
+
+func (s *audioSink) SendAudio(_ context.Context, m sink.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audio = append(s.audio, m)
+	return nil
+}
+
+type audioBuilder struct{ s *audioSink }
+
+func (b audioBuilder) Build(string, map[string]string) (sink.Sink, error) { return b.s, nil }
+
+type fakeSpeaker struct {
+	texts []string
+	err   error
+}
+
+func (f *fakeSpeaker) Speech(_ context.Context, text string) ([]byte, error) {
+	f.texts = append(f.texts, text)
+	return []byte("mp3"), f.err
+}
+
+func TestRun_AudioFollowsText(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, agenttest.Text("hello world", 0.01))
+	as := &audioSink{}
+	sp := &fakeSpeaker{}
+	e.r.Sinks, e.r.Speaker = audioBuilder{as}, sp
+	enableAudio(e)
+
+	sum, err := e.r.Run(context.Background(), "gigs", runner.TriggerManual)
+	if err != nil || !sum.Delivered {
+		t.Fatalf("run: %+v %v", sum, err)
+	}
+	if len(as.msgs) != 1 || len(as.audio) != 1 || string(as.audio[0].Audio) != "mp3" || as.audio[0].Job != "gigs" {
+		t.Fatalf("text=%+v audio=%+v", as.msgs, as.audio)
+	}
+	if len(sp.texts) != 1 || sp.texts[0] != "hello world" {
+		t.Fatalf("spoken = %q", sp.texts)
+	}
+}
+
+func TestRun_SpeakerFailureIsNotFatal(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t, agenttest.Text("hello", 0.01))
+	as := &audioSink{}
+	e.r.Sinks, e.r.Speaker = audioBuilder{as}, &fakeSpeaker{err: errors.New("tts down")}
+	enableAudio(e)
+
+	sum, err := e.r.Run(context.Background(), "gigs", runner.TriggerManual)
+	if err != nil || sum.Status != runlog.StatusOK || !sum.Delivered {
+		t.Fatalf("run: %+v %v", sum, err)
+	}
+	if len(as.audio) != 0 {
+		t.Fatalf("audio sent despite failure: %+v", as.audio)
+	}
+}
+
+func TestRun_NoAudioUnlessOptedInAndSupported(t *testing.T) {
+	t.Parallel()
+	partial := agenttest.Step{Resp: llm.Response{
+		Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "1", Name: "library__top_artists", Arguments: "{}"}}},
+		Usage:   llm.Usage{CostUSD: 5},
+	}}
+	tests := []struct {
+		name     string
+		step     agenttest.Step
+		optIn    bool
+		audioSnk bool
+	}{
+		{"nothing new", agenttest.Text(agent.NothingNew, 0.01), true, true},
+		{"partial run", partial, true, true},
+		{"sink without audio support", agenttest.Text("hello", 0.01), true, false},
+		{"no opt-in", agenttest.Text("hello", 0.01), false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			e := newEnv(t, tt.step)
+			as, sp := &audioSink{}, &fakeSpeaker{}
+			e.r.Speaker = sp
+			if tt.audioSnk {
+				e.r.Sinks = audioBuilder{as}
+			}
+			if tt.optIn {
+				enableAudio(e)
+			}
+			if _, err := e.r.Run(context.Background(), "gigs", runner.TriggerManual); err != nil {
+				t.Fatal(err)
+			}
+			if len(sp.texts) != 0 || len(as.audio) != 0 {
+				t.Fatalf("unexpected speech: %q %+v", sp.texts, as.audio)
+			}
+		})
+	}
+}
+
+// enableAudio adds `audio: true` to the env job's sink.
+func enableAudio(e *env) {
+	j := e.r.Jobs.(jobs)["gigs"]
+	j.Sinks = []config.Sink{{Type: "fake", Options: map[string]string{"audio": "true"}}}
+	e.r.Jobs = jobs{"gigs": j}
+}
