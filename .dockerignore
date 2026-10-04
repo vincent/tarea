@@ -1,0 +1,13 @@
+.git
+.github
+bin
+dist
+cover.out
+.env
+data/state
+data/runs.jsonl
+data/.env
+web/node_modules
+web/build
+web/.svelte-kit
+internal/webui/dist/*
