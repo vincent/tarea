@@ -37,5 +37,7 @@ EXPOSE 8080
 ENV TAREA_DATA=/data
 USER tarea
 
-# The panel has no auth: publish the port on loopback or put a proxy in front.
+# 0.0.0.0 inside the container: serve refuses to start unless TAREA_TOKEN is set
+# (docker run -e TAREA_TOKEN=... or in /data/.env). Still publish on loopback or
+# behind a TLS proxy: the token travels in a header.
 CMD ["tarea", "serve", "--addr", "0.0.0.0:8080"]

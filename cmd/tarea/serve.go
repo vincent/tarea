@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,7 +28,9 @@ func cmdServe(args []string, stderr io.Writer) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	data := dataFlag(fs)
-	addr := fs.String("addr", "127.0.0.1:8080", "panel listen address (no auth: keep it on loopback or behind a proxy)")
+	addr := fs.String("addr", "127.0.0.1:8080", "panel listen address (non-loopback requires $TAREA_TOKEN)")
+	var hosts stringList
+	fs.Var(&hosts, "allowed-host", "extra Host name accepted without a token, e.g. behind a local proxy (repeatable)")
 	reload := fs.Duration("reload", 5*time.Second, "how often to check the jobs directory for changes")
 	keep := fs.Int("keep-runs", 500, "run history kept per job (older runs are pruned daily)")
 	if err := fs.Parse(args); err != nil {
@@ -37,6 +40,10 @@ func cmdServe(args []string, stderr io.Writer) error {
 	a, err := newApp(*data, stderr)
 	if err != nil {
 		return err
+	}
+	token, _ := a.lookup("TAREA_TOKEN")
+	if token == "" && !isLoopbackAddr(*addr) {
+		return fmt.Errorf("refusing to listen on %q without authentication: set TAREA_TOKEN or bind to loopback", *addr)
 	}
 	r, err := a.runner(nil)
 	if err != nil {
@@ -57,7 +64,7 @@ func cmdServe(args []string, stderr io.Writer) error {
 	})
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           handler,
+		Handler:           api.Guard(handler, api.GuardOpts{Token: token, AllowedHosts: hosts}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -67,7 +74,7 @@ func cmdServe(args []string, stderr io.Writer) error {
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	a.log.Info("tarea listening", "addr", *addr, "data", a.dataDir, "version", version)
+	a.log.Info("tarea listening", "addr", *addr, "data", a.dataDir, "version", version, "auth", token != "")
 
 	select {
 	case err = <-errc:
@@ -101,4 +108,24 @@ func prune(ctx context.Context, a *app, keep int) {
 		case <-t.C:
 		}
 	}
+}
+
+// stringList is a repeatable string flag.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, ",") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
+
+// isLoopbackAddr reports whether a listen address only accepts local connections.
+// An empty or wildcard host (":8080", "0.0.0.0") listens on every interface.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

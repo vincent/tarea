@@ -12,10 +12,37 @@ export class ApiError extends Error {
 
 type Fetch = typeof fetch;
 
+const TOKEN_KEY = 'tarea.token';
+
+/** Bearer token kept for the browser session only (sessionStorage may be unavailable). */
+export const tokenStore = {
+  get(): string | null {
+    try {
+      return sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set(token: string | null): void {
+    try {
+      if (token) sessionStorage.setItem(TOKEN_KEY, token);
+      else sessionStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* storage unavailable: the token lasts until reload at best */
+    }
+  }
+};
+
 /** Small typed client; pass a custom fetch in tests. */
-export function createApi(fetchFn: Fetch = (...args) => fetch(...args)) {
-  async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetchFn(path, init);
+export function createApi(
+  fetchFn: Fetch = (...args) => fetch(...args),
+  getToken: () => string | null = tokenStore.get
+) {
+  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const token = getToken();
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const res = await fetchFn(path, { ...init, headers });
     const body: unknown = await res.json().catch(() => null);
     if (!res.ok) {
       const msg =

@@ -27,8 +27,6 @@ bin/tarea serve                 # scheduler + panel on http://127.0.0.1:8080
 
 Without the panel: `go build ./cmd/tarea` works too; `/` then answers with a hint, the API is unaffected.
 
-The first time on a fresh clone run `go mod tidy` to create `go.sum`.
-
 ## Data directory
 
 ```
@@ -97,7 +95,16 @@ mcp:
 
 ## HTTP API
 
-The panel uses this; it is also handy with `curl`. There is **no authentication**: the server binds to `127.0.0.1` by default. Put a reverse proxy with auth in front before exposing it.
+The panel uses this; it is also handy with `curl`. See [Security](#security) for access control.
+
+### Security
+
+Transcripts contain system prompts, memory and raw tool output, so the API is guarded in two ways:
+
+- **Loopback (default, no token):** requests whose `Host` is not `localhost`, `127.0.0.1` or `::1` are refused (DNS rebinding), as are browser requests carrying a foreign `Origin` or `Sec-Fetch-Site: cross-site` (CSRF). `curl` and scripts send none of those headers and work as usual. Add names with `--allowed-host` (repeatable), e.g. behind a local proxy.
+- **Remote (token):** set `TAREA_TOKEN` (environment or `data/.env`, never a flag) and `/api/*` requires `Authorization: Bearer <token>`; the panel asks for it once per browser session. `GET /api/health` and the static panel stay public. `serve` refuses to start on a non-loopback `--addr` without a token, which includes the Docker image (`docker run -e TAREA_TOKEN=... -p 127.0.0.1:8080:8080 ...`).
+
+The token is sent in clear text over HTTP: use TLS (a reverse proxy) beyond your own machine.
 
 | Method | Path | |
 |---|---|---|

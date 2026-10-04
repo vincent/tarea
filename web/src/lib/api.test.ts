@@ -40,4 +40,15 @@ describe('api client', () => {
     await api.runNow('gigs');
     expect(seen.init?.method).toBe('POST');
   });
+
+  it('sends the bearer token when one is stored', async () => {
+    const seen: { init?: RequestInit } = {};
+    const api = createApi(fakeFetch(200, [], seen), () => 's3cret');
+    await api.jobs();
+    expect(new Headers(seen.init?.headers).get('Authorization')).toBe('Bearer s3cret');
+
+    const anon = createApi(fakeFetch(200, [], seen), () => null);
+    await anon.jobs();
+    expect(new Headers(seen.init?.headers).has('Authorization')).toBe(false);
+  });
 });

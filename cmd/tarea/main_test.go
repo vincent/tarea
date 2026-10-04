@@ -81,3 +81,26 @@ func TestRunCommand_RequiresKeyAndJobName(t *testing.T) {
 		t.Fatalf("no key: code=%d err=%q", code, errOut.String())
 	}
 }
+
+func TestServe_RefusesOpenListenerWithoutToken(t *testing.T) {
+	t.Setenv("TAREA_TOKEN", "")
+	dir := t.TempDir()
+	for _, addr := range []string{"0.0.0.0:0", ":0", "[::]:0", "192.0.2.1:0"} {
+		var errOut bytes.Buffer
+		if code := run([]string{"serve", "--data", dir, "--addr", addr}, &bytes.Buffer{}, &errOut); code == 0 || !strings.Contains(errOut.String(), "TAREA_TOKEN") {
+			t.Errorf("addr %s: code=%d err=%q", addr, code, errOut.String())
+		}
+	}
+}
+
+func TestIsLoopbackAddr(t *testing.T) {
+	t.Parallel()
+	for addr, want := range map[string]bool{
+		"127.0.0.1:8080": true, "localhost:8080": true, "[::1]:8080": true,
+		"0.0.0.0:8080": false, ":8080": false, "[::]:8080": false, "10.0.0.5:8080": false, "bad": false,
+	} {
+		if got := isLoopbackAddr(addr); got != want {
+			t.Errorf("isLoopbackAddr(%q) = %v, want %v", addr, got, want)
+		}
+	}
+}

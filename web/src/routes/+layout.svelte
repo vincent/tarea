@@ -1,18 +1,30 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/state';
-  import { api } from '#lib/api.ts';
+  import { api, ApiError, tokenStore } from '#lib/api.ts';
   import type { Health } from '#lib/types.ts';
 
   let { children } = $props();
   let health = $state<Health | null>(null);
+  let needsToken = $state(false);
+  let token = $state('');
 
   $effect(() => {
     api
       .health()
       .then((h) => (health = h))
       .catch(() => (health = null));
+    // /api/health is public: probe a protected endpoint to learn whether a token is required.
+    api.jobs().catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 401) needsToken = true;
+    });
   });
+
+  function saveToken(e: SubmitEvent) {
+    e.preventDefault();
+    tokenStore.set(token.trim());
+    location.reload();
+  }
 
   const links = [
     { href: '/', label: 'Jobs' },
@@ -32,7 +44,15 @@
 </header>
 
 <main>
-  {@render children()}
+  {#if needsToken}
+    <form onsubmit={saveToken}>
+      <p>This server requires an access token (<span class="mono">TAREA_TOKEN</span>).</p>
+      <input type="password" bind:value={token} placeholder="token" autocomplete="off" required />
+      <button type="submit">Unlock</button>
+    </form>
+  {:else}
+    {@render children()}
+  {/if}
 </main>
 
 <style>
