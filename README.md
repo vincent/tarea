@@ -86,9 +86,10 @@ mcp:
     allow: [search_jobs]
 ```
 
-- Exactly one of `command` (stdio) or `url` (HTTP) per server.
+- Exactly one of `command` (stdio), `url` (HTTP) or `builtin: http` per server.
 - `allow` is mandatory. Use `["*"]` to expose everything. Naming a tool the server does not offer fails the run loudly, so a typo can never silently remove a tool.
 - Servers are started per run and closed afterwards. Stdio servers only inherit `PATH`, `HOME`, `USER`, `LANG`, `TMPDIR` plus the `env` you list, so job secrets do not leak to other servers.
+- `builtin: http` runs in-process and needs `hosts` (allowed `host[:port]` list); optional `headers` are injected and never shown to the model. It offers `request` (GET/POST, body capped at 64 KB), `text` (HTML converted to plain text) and `jq`. `jq` takes `url` and `query`, fetches up to 10 MB of JSON and applies the jq filter (gojq), returning one compact JSON value per line, so a prompt like "extract `.[] | .id` from the result of https://host/json" never puts the whole payload in the model's context.
 - Each tool call has a 60 s timeout; output is truncated to 16 KB; three consecutive tool errors end the run.
 
 ## Sinks

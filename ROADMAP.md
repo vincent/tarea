@@ -15,7 +15,7 @@ Scaffold complete through phases 0-7 (see boxes below). Verified in the build sa
 2. `make lint` with the real `sdkdial` included.
 3. A real end-to-end run: `tarea run --dry-run gigs` against OpenRouter and one real MCP server.
 
-**Since the scaffold:** Dockerfile and GHCR image workflow, bearer-token API guard (loopback Host/Origin checks without a token), `enabled: false` job flag (shown in the panel), in-process `http` builtin tool, audio sink option, context guards against memory overwrite, stale-job handling, partial-delivery handling, `go.sum` committed.
+**Since the scaffold:** Dockerfile and GHCR image workflow, bearer-token API guard (loopback Host/Origin checks without a token), `enabled: false` job flag (shown in the panel), in-process `http` builtin tool (`request`, `text`, `jq` via gojq), audio sink option, context guards against memory overwrite, stale-job handling, partial-delivery handling, `go.sum` committed.
 
 **Open from phase 8:** per-job/global budget view, general log redaction, goreleaser, UI kill-switch button, systemd/Docker docs polish.
 

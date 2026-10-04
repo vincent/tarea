@@ -130,11 +130,11 @@ func TestText_RejectsDisallowedHost(t *testing.T) {
 	}
 }
 
-func TestListTools_OffersRequestAndText(t *testing.T) {
+func TestListTools_OffersRequestTextAndJQ(t *testing.T) {
 	t.Parallel()
 	s, _ := newSession(t, http.NotFoundHandler())
 	tools, err := s.ListTools(context.Background())
-	if err != nil || len(tools) != 2 || tools[0].Name != "request" || tools[1].Name != "text" {
+	if err != nil || len(tools) != 3 || tools[0].Name != "request" || tools[1].Name != "text" || tools[2].Name != "jq" {
 		t.Fatalf("tools=%v err=%v", tools, err)
 	}
 }
@@ -163,5 +163,75 @@ func TestText_ErrorsOnEmptyConversion(t *testing.T) {
 	}))
 	if _, err := s.CallTool(context.Background(), "text", json.RawMessage(`{"url":"`+base+`"}`)); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func jq(s mcpx.Session, rawURL, query string) (string, error) {
+	args, _ := json.Marshal(map[string]string{"url": rawURL, "query": query})
+	return s.CallTool(context.Background(), "jq", args)
+}
+
+func jsonServer(t *testing.T, body string) (sess mcpx.Session, baseURL string) {
+	t.Helper()
+	return newSession(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+}
+
+func TestJQ_ExtractsValuesOnePerLine(t *testing.T) {
+	t.Parallel()
+	s, base := jsonServer(t, `[{"id":1,"n":"a"},{"id":2,"n":"b"}]`)
+	out, err := jq(s, base, ".[] | .id")
+	if err != nil || out != "1\n2" {
+		t.Fatalf("got %q %v", out, err)
+	}
+	out, err = jq(s, base, `.[0]`)
+	if err != nil || out != `{"id":1,"n":"a"}` {
+		t.Fatalf("got %q %v", out, err)
+	}
+}
+
+func TestJQ_NoOutput(t *testing.T) {
+	t.Parallel()
+	s, base := jsonServer(t, `[]`)
+	if out, err := jq(s, base, ".[]"); err != nil || out != "(no output)" {
+		t.Fatalf("got %q %v", out, err)
+	}
+}
+
+func TestJQ_Errors(t *testing.T) {
+	t.Parallel()
+	s, base := jsonServer(t, `{"a":1}`)
+	bad, _ := newSession(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("nope")) }))
+	_, badBase := newSession(t, http.NotFoundHandler())
+	for name, fn := range map[string]func() (string, error){
+		"bad query": func() (string, error) { return jq(s, base, ".[") },
+		"runtime":   func() (string, error) { return jq(s, base, `error("x")`) },
+		"host":      func() (string, error) { return jq(s, "http://example.invalid/", ".") },
+		"non-json":  func() (string, error) { return jq(bad, badBase, ".") },
+		"non-2xx":   func() (string, error) { return jq(s, badBase, ".") },
+	} {
+		if _, err := fn(); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestJQ_RejectsOversizeBody(t *testing.T) {
+	t.Parallel()
+	s, base := jsonServer(t, `"`+strings.Repeat("a", 10<<20)+`"`)
+	if _, err := jq(s, base, "."); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestJQ_InjectsHeader(t *testing.T) {
+	t.Parallel()
+	s, base := newSession(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"k":"` + r.Header.Get("X-Api-Key") + `"}`))
+	}))
+	if out, err := jq(s, base, ".k"); err != nil || out != `"secret"` {
+		t.Fatalf("got %q %v", out, err)
 	}
 }

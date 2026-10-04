@@ -1,5 +1,5 @@
-// Package httptool is an in-process MCP session offering one tool, "request",
-// that performs HTTP calls restricted to a per-job host allow-list. Configured
+// Package httptool is an in-process MCP session offering the "request", "text"
+// and "jq" tools, which perform HTTP calls restricted to a per-job host allow-list. Configured
 // headers (typically secrets) are injected here and never shown to the model.
 package httptool
 
@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/itchyny/gojq"
 	"github.com/k3a/html2text"
 
 	"github.com/vincent/tarea/internal/config"
@@ -31,10 +32,26 @@ const maxPageBytes = 1 << 20
 // removed before conversion.
 var nonContent = regexp.MustCompile(`(?is)<!--.*?-->|<(script|style|noscript|template)\b.*?</(script|style|noscript|template)\s*>`)
 
+// maxJSONBytes caps the JSON document fetched by the jq tool.
+const maxJSONBytes = 10 << 20
+
+// maxJQOutputBytes caps the rendered jq output kept in memory.
+const maxJQOutputBytes = 1 << 20
+
 const (
 	toolRequest = "request"
 	toolText    = "text"
+	toolJQ      = "jq"
 )
+
+const jqSchema = `{
+  "type": "object",
+  "properties": {
+    "url": {"type": "string", "description": "Absolute http(s) URL returning JSON"},
+    "query": {"type": "string", "description": "jq filter, e.g. '.[] | .id'"}
+  },
+  "required": ["url", "query"]
+}`
 
 const textSchema = `{
   "type": "object",
@@ -91,7 +108,7 @@ func Wrap(dial mcpx.Dialer, client *http.Client) mcpx.Dialer {
 	}
 }
 
-// ListTools returns the request and text tools.
+// ListTools returns the request, text and jq tools.
 func (s *Session) ListTools(context.Context) ([]mcpx.Tool, error) {
 	return []mcpx.Tool{
 		{
@@ -104,6 +121,11 @@ func (s *Session) ListTools(context.Context) ([]mcpx.Tool, error) {
 			Description: "GET a web page from an allowed host and return it as plain text (HTML converted). Returns the status line then the text.",
 			Schema:      json.RawMessage(textSchema),
 		},
+		{
+			Name:        toolJQ,
+			Description: "GET a JSON document from an allowed host (up to 10 MB) and apply a jq filter to it. Returns one compact JSON value per line. Prefer this over request for large JSON.",
+			Schema:      json.RawMessage(jqSchema),
+		},
 	}, nil
 }
 
@@ -113,6 +135,7 @@ func (s *Session) CallTool(ctx context.Context, name string, args json.RawMessag
 		Method string `json:"method"`
 		URL    string `json:"url"`
 		Body   string `json:"body"`
+		Query  string `json:"query"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return "", fmt.Errorf("invalid arguments: %w", err)
@@ -122,6 +145,8 @@ func (s *Session) CallTool(ctx context.Context, name string, args json.RawMessag
 		return s.request(ctx, in.Method, in.URL, in.Body)
 	case toolText:
 		return s.text(ctx, in.URL)
+	case toolJQ:
+		return s.jq(ctx, in.URL, in.Query)
 	default:
 		return "", fmt.Errorf("unknown tool %q", name)
 	}
@@ -158,9 +183,60 @@ func (s *Session) text(ctx context.Context, rawURL string) (string, error) {
 	return format(res.status, []byte(out), maxBodyBytes), nil
 }
 
+func (s *Session) jq(ctx context.Context, rawURL, query string) (string, error) {
+	q, err := gojq.Parse(query)
+	if err != nil {
+		return "", fmt.Errorf("invalid jq query: %w", err)
+	}
+	code, err := gojq.Compile(q)
+	if err != nil {
+		return "", fmt.Errorf("invalid jq query: %w", err)
+	}
+	res, err := s.do(ctx, http.MethodGet, rawURL, "", maxJSONBytes)
+	if err != nil {
+		return "", err
+	}
+	if res.code < 200 || res.code > 299 {
+		return "", fmt.Errorf("unexpected status: %s", res.status)
+	}
+	if len(res.body) > maxJSONBytes {
+		return "", fmt.Errorf("response exceeds %d MB", maxJSONBytes>>20)
+	}
+	var doc any
+	if err := json.Unmarshal(res.body, &doc); err != nil {
+		return "", fmt.Errorf("response is not valid JSON: %w", err)
+	}
+	var out strings.Builder
+	iter := code.RunWithContext(ctx, doc)
+	for {
+		v, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if err, isErr := v.(error); isErr {
+			return "", fmt.Errorf("jq: %w", err)
+		}
+		b, err := gojq.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("jq: marshal: %w", err)
+		}
+		if out.Len()+len(b) > maxJQOutputBytes {
+			out.WriteString("[truncated]")
+			return out.String(), nil
+		}
+		out.Write(b)
+		out.WriteByte('\n')
+	}
+	if out.Len() == 0 {
+		return "(no output)", nil
+	}
+	return strings.TrimSuffix(out.String(), "\n"), nil
+}
+
 // response is what is left of an http.Response once its body is consumed.
 type response struct {
 	status      string
+	code        int
 	contentType string
 	body        []byte
 }
@@ -198,7 +274,7 @@ func (s *Session) do(ctx context.Context, method, rawURL, body string, limit int
 	if err != nil {
 		return response{}, fmt.Errorf("read body: %w", err)
 	}
-	return response{status: resp.Status, contentType: resp.Header.Get("Content-Type"), body: data}, nil
+	return response{status: resp.Status, code: resp.StatusCode, contentType: resp.Header.Get("Content-Type"), body: data}, nil
 }
 
 // format renders "status\n\nbody", truncating body to limit bytes.
