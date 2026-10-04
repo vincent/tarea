@@ -31,11 +31,11 @@
 <h1>Jobs</h1>
 
 {#if error}
-  <p class="error">Cannot reach agentd: {error}</p>
+  <p class="error">Cannot reach tarea: {error}</p>
 {:else if loaded && jobs.length === 0}
   <p class="muted">
     No jobs yet. Add a YAML file to <span class="mono">data/jobs/</span> and run
-    <span class="mono">agentd validate</span>.
+    <span class="mono">tarea validate</span>.
   </p>
 {:else}
   <div class="card scroll-x">

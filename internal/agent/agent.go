@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 // NothingNew is the sentinel a model returns when there is nothing to report;

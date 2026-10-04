@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/agent"
-	"github.com/vincent/agentd/internal/agent/agenttest"
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/llm"
-	"github.com/vincent/agentd/internal/mcpx"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/runner"
-	"github.com/vincent/agentd/internal/sink"
+	"github.com/vincent/tarea/internal/agent"
+	"github.com/vincent/tarea/internal/agent/agenttest"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/llm"
+	"github.com/vincent/tarea/internal/mcpx"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/runner"
+	"github.com/vincent/tarea/internal/sink"
 )
 
 type jobs map[string]config.Job

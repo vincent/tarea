@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincent/agentd/internal/sink"
+	"github.com/vincent/tarea/internal/sink"
 )
 
 const (

@@ -40,11 +40,11 @@ web:
 
 ## build: single static binary with the embedded panel
 build: web
-	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/agentd ./cmd/agentd
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/tarea ./cmd/tarea
 
 ## dev-api / dev-web: run in two terminals; Vite proxies /api to :8080
 dev-api:
-	go run ./cmd/agentd serve --data data
+	go run ./cmd/tarea serve --data data
 
 dev-web:
 	cd web && npm run dev
@@ -56,9 +56,9 @@ release: web
 		os=$${p%/*}; arch=$${p#*/}; ext=""; [ "$$os" = windows ] && ext=".exe"; \
 		echo "building $$os/$$arch"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" \
-			-o dist/agentd-$$os-$$arch$$ext ./cmd/agentd || exit 1; \
+			-o dist/tarea-$$os-$$arch$$ext ./cmd/tarea || exit 1; \
 	done
-	cd dist && (sha256sum agentd-* 2>/dev/null || shasum -a 256 agentd-*) > SHA256SUMS
+	cd dist && (sha256sum tarea-* 2>/dev/null || shasum -a 256 tarea-*) > SHA256SUMS
 
 clean:
 	rm -rf bin dist cover.out web/build web/.svelte-kit

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/agent"
-	"github.com/vincent/agentd/internal/agent/agenttest"
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/agent"
+	"github.com/vincent/tarea/internal/agent/agenttest"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 func spec() agent.Spec {

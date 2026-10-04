@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vincent/agentd/internal/sink"
+	"github.com/vincent/tarea/internal/sink"
 )
 
 type nop struct{}

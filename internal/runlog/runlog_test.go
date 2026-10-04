@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/llm"
-	"github.com/vincent/agentd/internal/runlog"
+	"github.com/vincent/tarea/internal/llm"
+	"github.com/vincent/tarea/internal/runlog"
 )
 
 var t0 = time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)

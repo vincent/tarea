@@ -17,8 +17,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/mcpx"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/mcpx"
 )
 
 // Version is reported to servers; set via -ldflags.
@@ -34,7 +34,7 @@ func Dial(ctx context.Context, srv config.MCPServer) (mcpx.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "agentd", Version: Version}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "tarea", Version: Version}, nil)
 	cs, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)

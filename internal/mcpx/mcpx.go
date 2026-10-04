@@ -13,8 +13,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 // Separator joins server and tool names: "events__search".

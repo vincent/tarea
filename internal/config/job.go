@@ -11,7 +11,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 
-	"github.com/vincent/agentd/internal/fsx"
+	"github.com/vincent/tarea/internal/fsx"
 )
 
 // Defaults applied when a field is omitted.

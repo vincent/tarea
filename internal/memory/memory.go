@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vincent/agentd/internal/fsx"
+	"github.com/vincent/tarea/internal/fsx"
 )
 
 // ErrOverCap is returned when a write would push memory past its size cap.

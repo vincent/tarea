@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vincent/agentd/internal/config"
+	"github.com/vincent/tarea/internal/config"
 )
 
 func lookup(m map[string]string) config.Lookup {

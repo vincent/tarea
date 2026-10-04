@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/runner"
-	"github.com/vincent/agentd/internal/scheduler"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/runner"
+	"github.com/vincent/tarea/internal/scheduler"
 )
 
 type fakeRunner struct {

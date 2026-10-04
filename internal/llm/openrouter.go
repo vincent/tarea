@@ -50,7 +50,7 @@ func NewOpenRouter(apiKey string) *OpenRouter {
 		MaxRetries: 3,
 		Backoff:    time.Second,
 		Sleep:      sleepCtx,
-		Title:      "agentd",
+		Title:      "tarea",
 	}
 }
 

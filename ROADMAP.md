@@ -1,4 +1,4 @@
-# agentd: Roadmap
+# tarea: Roadmap
 
 A tiny scheduler for LLM jobs (OpenRouter), per-job MCP tools, file-based memory, Telegram sink, Svelte overview panel. One static Go binary.
 
@@ -13,7 +13,7 @@ Scaffold complete through phases 0-7 (see boxes below). Verified in the build sa
 **Not verified yet (do these first on your machine):**
 1. `go mod tidy` (creates `go.sum`) and `go build ./...` with Go 1.24+. `internal/mcpx/sdkdial` (the only file importing the official MCP SDK) was written from the v1.0.0 API and could not be compiled in the sandbox; expect a small field/type fix at most.
 2. `make lint` with the real `sdkdial` included.
-3. A real end-to-end run: `agentd run --dry-run gigs` against OpenRouter and one real MCP server.
+3. A real end-to-end run: `tarea run --dry-run gigs` against OpenRouter and one real MCP server.
 
 **Open from phase 8:** per-job/global budget view, log redaction, Dockerfile, goreleaser, panel auth.
 
@@ -48,8 +48,8 @@ Scaffold complete through phases 0-7 (see boxes below). Verified in the build sa
 ## 2. Repository layout
 
 ```
-agentd/
-├── cmd/agentd/main.go            # CLI: serve | run <job> | validate | version
+tarea/
+├── cmd/tarea/main.go             # CLI: serve | run <job> | validate | version
 ├── internal/
 │   ├── config/                   # load + validate YAML, env expansion
 │   ├── llm/                      # Provider interface + OpenRouter client
@@ -70,7 +70,7 @@ agentd/
 └── README.md
 ```
 
-Runtime data dir (configurable via `--data` or `AGENTD_DATA`):
+Runtime data dir (configurable via `--data` or `TAREA_DATA`):
 
 ```
 data/
@@ -171,7 +171,7 @@ The authoritative config is [`.golangci.yml`](.golangci.yml) in the repo root (g
 - **Complexity:** cyclop (max 14), funlen (80 lines / 50 statements).
 - **Tests:** testpackage, paralleltest, tparallel.
 - **Architecture:** depguard forbids `net/http`, `os`, `os/exec` in `internal/agent`.
-- **Formatters:** gofmt, goimports, gci (standard, default, then `github.com/vincent/agentd`).
+- **Formatters:** gofmt, goimports, gci (standard, default, then `github.com/vincent/tarea`).
 
 Deviations from the first draft: `gofumpt` became `gofmt` (fewer surprises across editors); `cmd/` is exempt from `testpackage` because `main_test.go` must call `run()`.
 
@@ -224,11 +224,11 @@ Optional later: `GET /api/events` (SSE) for live run status.
 
 ### Phase 1: Config and LLM client (1 day)
 - [x] `config`: YAML structs, `${ENV}` expansion, validation with precise error messages (job name, field, line). (job + field in errors; line numbers not yet)
-- [x] `agentd validate` command over the jobs dir. (also rejects unknown sink types)
+- [x] `tarea validate` command over the jobs dir. (also rejects unknown sink types)
 - [x] `llm`: OpenRouter chat with tool calling, `models` fallbacks, retry with backoff on 429/5xx, usage + cost extraction.
 - [x] Recorded-response tests; context cancellation test.
 
-**Done when:** `agentd validate` flags bad jobs; a fake-server test covers success, 429 retry, fallback, malformed JSON.
+**Done when:** `tarea validate` flags bad jobs; a fake-server test covers success, 429 retry, fallback, malformed JSON.
 
 ### Phase 2: The agent loop (1.5 days) [critical]
 - [x] Define `Provider`, `ToolHost`, `Memory`, `Seen`, `Clock` in `agent`. (`Clock` is a `Now func() time.Time` in `Deps`)
@@ -257,15 +257,15 @@ Optional later: `GET /api/events` (SSE) for live run status.
 ### Phase 5: Sink and runner (1 day)
 - [x] `sink` interface + registry; Telegram: `sendMessage`, 4096-char chunking on paragraph boundaries, MarkdownV2 escaping, retry on 429 honoring `retry_after`. (**deviation:** plain text, no MarkdownV2; escaping everything adds nothing visible. Chunking is by runes at paragraph/line/word boundaries)
 - [x] `runner`: lock, build deps, run agent, deliver to sinks, write runlog, always release resources.
-- [x] `agentd run <job>` CLI with `--dry-run` (print instead of sending).
+- [x] `tarea run <job>` CLI with `--dry-run` (print instead of sending).
 - [x] End-to-end test with all fakes.
 
-**Done when:** `agentd run gigs --dry-run` works against OpenRouter and a real MCP server; Telegram message arrives.
+**Done when:** `tarea run gigs --dry-run` works against OpenRouter and a real MCP server; Telegram message arrives.
 
 ### Phase 6: Scheduler and API (1 day)
 - [x] `scheduler`: register cron from jobs, reload on file change (poll mtime, no fsnotify dep), no overlap, run-now, graceful shutdown (wait for in-flight runs with deadline).
 - [x] `api`: handlers per contract, redaction of secrets, `go:embed` static serving with SPA fallback. (plus `GET /api/runs` for the cost page)
-- [x] `agentd serve` wires everything; graceful SIGTERM.
+- [x] `tarea serve` wires everything; graceful SIGTERM.
 
 **Done when:** a job fires on schedule in a fake-clock test; `curl /api/jobs` returns expected JSON.
 
@@ -310,7 +310,7 @@ Coverage targets: `agent` >= 90%, `sink`/`llm`/`mcpx`/`memory` >= 80%, rest best
 
 ## 10. Path to a standalone project
 
-- [ ] Job files are the shareable unit: add `agentd jobs install <url|path>` and a `jobs/examples/` folder.
+- [ ] Job files are the shareable unit: add `tarea jobs install <url|path>` and a `jobs/examples/` folder.
 - [ ] `Provider` interface already allows a second backend (direct Anthropic/OpenAI) without touching `agent`.
 - [ ] Additional sinks (ntfy, email, webhook, file digest): one file each, registered in `sink`.
 - [ ] Optional auth on the panel (static bearer token first, then OIDC).

@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vincent/agentd/internal/api"
-	"github.com/vincent/agentd/internal/scheduler"
-	"github.com/vincent/agentd/internal/webui"
+	"github.com/vincent/tarea/internal/api"
+	"github.com/vincent/tarea/internal/scheduler"
+	"github.com/vincent/tarea/internal/webui"
 )
 
 const (
@@ -67,7 +67,7 @@ func cmdServe(args []string, stderr io.Writer) error {
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	a.log.Info("agentd listening", "addr", *addr, "data", a.dataDir, "version", version)
+	a.log.Info("tarea listening", "addr", *addr, "data", a.dataDir, "version", version)
 
 	select {
 	case err = <-errc:

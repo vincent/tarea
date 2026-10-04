@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vincent/agentd/internal/fsx"
+	"github.com/vincent/tarea/internal/fsx"
 )
 
 // ErrJobNotFound is returned by Dir.Get for an unknown job.

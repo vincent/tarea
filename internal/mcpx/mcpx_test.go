@@ -11,8 +11,8 @@ import (
 
 	"go.uber.org/goleak"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/mcpx"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/mcpx"
 )
 
 func TestMain(m *testing.M) { goleak.VerifyTestMain(m) }

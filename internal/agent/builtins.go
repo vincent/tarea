@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 // Built-in tool names. MCP tools are namespaced "server__tool", so these never collide.

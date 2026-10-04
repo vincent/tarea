@@ -10,10 +10,10 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/vincent/agentd/internal/api"
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/scheduler"
+	"github.com/vincent/tarea/internal/api"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/scheduler"
 )
 
 var now = time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)

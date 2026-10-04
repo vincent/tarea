@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/vincent/agentd/internal/runner"
+	"github.com/vincent/tarea/internal/runner"
 )
 
 func cmdRun(args []string, stdout, stderr io.Writer) error {
@@ -22,7 +22,7 @@ func cmdRun(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("parse flags: %w", err)
 	}
 	if fs.NArg() < 1 {
-		return errors.New("usage: agentd run [--data DIR] [--dry-run] JOB")
+		return errors.New("usage: tarea run [--data DIR] [--dry-run] JOB")
 	}
 	name := fs.Arg(0)
 	if err := fs.Parse(fs.Args()[1:]); err != nil { // allow flags after the job name.

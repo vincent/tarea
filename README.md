@@ -1,4 +1,4 @@
-# agentd
+# tarea
 
 A small scheduler for LLM jobs. Each job is one YAML file: a cron schedule, a prompt, the MCP tools it may use, a memory file and one or more sinks (Telegram today). One static Go binary, no database, with an embedded Svelte panel for an overview of every job.
 
@@ -18,14 +18,14 @@ cron ─► runner ─► agent loop ─► OpenRouter
 Requirements: Go 1.24+, Node 22+ (only to build the panel).
 
 ```sh
-make build                      # builds the panel, embeds it, writes bin/agentd
+make build                      # builds the panel, embeds it, writes bin/tarea
 cp data/.env.example data/.env  # then fill in the keys
-bin/agentd validate             # checks every job file
-bin/agentd run --dry-run gigs   # runs once, prints the result instead of sending it
-bin/agentd serve                # scheduler + panel on http://127.0.0.1:8080
+bin/tarea validate             # checks every job file
+bin/tarea run --dry-run gigs   # runs once, prints the result instead of sending it
+bin/tarea serve                # scheduler + panel on http://127.0.0.1:8080
 ```
 
-Without the panel: `go build ./cmd/agentd` works too; `/` then answers with a hint, the API is unaffected.
+Without the panel: `go build ./cmd/tarea` works too; `/` then answers with a hint, the API is unaffected.
 
 The first time on a fresh clone run `go mod tidy` to create `go.sum`.
 
@@ -42,7 +42,7 @@ data/
   runs.jsonl              one summary line per run (feeds the panel)
 ```
 
-Everything is a plain file; delete `state/<name>` to reset a job. Set `--data` or `$AGENTD_DATA` to move it.
+Everything is a plain file; delete `state/<name>` to reset a job. Set `--data` or `$TAREA_DATA` to move it.
 
 ## Job reference
 
@@ -91,7 +91,7 @@ mcp:
 
 ## Sinks
 
-`telegram`: `chat_id` per job, bot token from `TELEGRAM_BOT_TOKEN` (or a `token` option). Messages are plain text, split at paragraph/line/word boundaries to stay under Telegram's limit, with retry on 429. New sinks implement `sink.Sink` and register in `cmd/agentd/wire.go`.
+`telegram`: `chat_id` per job, bot token from `TELEGRAM_BOT_TOKEN` (or a `token` option). Messages are plain text, split at paragraph/line/word boundaries to stay under Telegram's limit, with retry on 429. New sinks implement `sink.Sink` and register in `cmd/tarea/wire.go`.
 
 ## HTTP API
 
@@ -121,7 +121,7 @@ make release    # cross-compiles into dist/ (CGO off)
 Layout:
 
 ```
-cmd/agentd/            CLI wiring only (serve, run, validate, version)
+cmd/tarea/             CLI wiring only (serve, run, validate, version)
 internal/agent/        the loop: pure, all I/O injected (depguard forbids net/http and os here)
 internal/runner/       one run: lock, deps, agent, delivery, run log
 internal/scheduler/    cron, no-overlap, run-now, hot reload
@@ -143,6 +143,6 @@ Testing notes: every package takes its collaborators as interfaces, with fakes i
 - A job file that becomes invalid is unscheduled (and logged) until it is fixed; valid jobs keep running. The jobs directory is polled every 5 s, no restart needed.
 - A job never overlaps itself: a cron tick during a run is skipped; `run` / the panel's button answer "already running". A stale lock (> 2 h) is taken over after a crash.
 - Run history is pruned daily to the newest 500 runs per job (`--keep-runs`).
-- `deploy/agentd.service` is a hardened systemd unit.
+- `deploy/tarea.service` is a hardened systemd unit.
 
 See `ROADMAP.md` for what is done and what is next.

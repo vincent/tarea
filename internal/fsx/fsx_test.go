@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/fsx"
+	"github.com/vincent/tarea/internal/fsx"
 )
 
 func TestWriteFileAtomic(t *testing.T) {

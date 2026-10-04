@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/llm"
-	"github.com/vincent/agentd/internal/mcpx/sdkdial"
-	"github.com/vincent/agentd/internal/memory"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/runner"
-	"github.com/vincent/agentd/internal/sink"
-	"github.com/vincent/agentd/internal/sink/telegram"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/llm"
+	"github.com/vincent/tarea/internal/mcpx/sdkdial"
+	"github.com/vincent/tarea/internal/memory"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/runner"
+	"github.com/vincent/tarea/internal/sink"
+	"github.com/vincent/tarea/internal/sink/telegram"
 )
 
 // app holds the pieces shared by every command.
@@ -33,7 +33,7 @@ type app struct {
 
 func newApp(dataDir string, stderr io.Writer) (*app, error) {
 	if info, err := os.Stat(dataDir); err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("data directory %q not found (use --data or $AGENTD_DATA)", dataDir)
+		return nil, fmt.Errorf("data directory %q not found (use --data or $TAREA_DATA)", dataDir)
 	}
 	dotenv, err := config.LoadDotEnv(filepath.Join(dataDir, ".env"))
 	if err != nil {
@@ -42,7 +42,7 @@ func newApp(dataDir string, stderr io.Writer) (*app, error) {
 	lookup := config.EnvLookup(dotenv)
 
 	level := slog.LevelInfo
-	if strings.EqualFold(os.Getenv("AGENTD_LOG"), "debug") {
+	if strings.EqualFold(os.Getenv("TAREA_LOG"), "debug") {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level}))

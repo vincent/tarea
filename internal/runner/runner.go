@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vincent/agentd/internal/agent"
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/fsx"
-	"github.com/vincent/agentd/internal/mcpx"
-	"github.com/vincent/agentd/internal/memory"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/sink"
+	"github.com/vincent/tarea/internal/agent"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/fsx"
+	"github.com/vincent/tarea/internal/mcpx"
+	"github.com/vincent/tarea/internal/memory"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/sink"
 )
 
 // Trigger records what started a run.

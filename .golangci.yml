@@ -84,7 +84,7 @@ linters:
         - errors.Join(
         - .Wrap(
       ignore-package-globs:
-        - github.com/vincent/agentd/*
+        - github.com/vincent/tarea/*
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -127,10 +127,10 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/vincent/agentd)
+        - prefix(github.com/vincent/tarea)
     goimports:
       local-prefixes:
-        - github.com/vincent/agentd
+        - github.com/vincent/tarea
 
 issues:
   max-issues-per-linter: 0

@@ -1,4 +1,4 @@
-module github.com/vincent/agentd
+module github.com/vincent/tarea
 
 go 1.24
 

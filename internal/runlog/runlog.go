@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vincent/agentd/internal/fsx"
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/fsx"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 // ErrNotFound is returned by Get for an unknown run.

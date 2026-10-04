@@ -71,10 +71,10 @@ jobs:
           arch=${{ matrix.target }}; arch=${arch#*/}
           ext=""; [ "$os" = windows ] && ext=".exe"
           go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
-            -o "dist/agentd-$os-$arch$ext" ./cmd/agentd
+            -o "dist/tarea-$os-$arch$ext" ./cmd/tarea
       - uses: actions/upload-artifact@v4
         with:
-          name: agentd-${{ strategy.job-index }}
+          name: tarea-${{ strategy.job-index }}
           path: dist/*
 
   release:
@@ -86,11 +86,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: agentd-*
+          pattern: tarea-*
           path: dist
           merge-multiple: true
       - name: Checksums
-        run: cd dist && sha256sum agentd-* > SHA256SUMS
+        run: cd dist && sha256sum tarea-* > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*

@@ -1,4 +1,4 @@
-// Package fsx provides the small filesystem primitives agentd relies on:
+// Package fsx provides the small filesystem primitives tarea relies on:
 // atomic writes, append-only lines, advisory lock files and traversal-safe
 // path joins. It is stdlib-only and safe to cross-compile.
 package fsx

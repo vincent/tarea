@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/sink"
-	"github.com/vincent/agentd/internal/sink/telegram"
+	"github.com/vincent/tarea/internal/sink"
+	"github.com/vincent/tarea/internal/sink/telegram"
 )
 
 func TestChunk(t *testing.T) {

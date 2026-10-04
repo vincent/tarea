@@ -1,5 +1,5 @@
 # Example job. Copy, rename, edit. The file name is the job name.
-# Validate with: agentd validate
+# Validate with: tarea validate
 schedule: "0 8 * * *"        # standard 5-field cron, server local time
 model: anthropic/claude-sonnet-4.5
 fallbacks: [openai/gpt-5-mini]

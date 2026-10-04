@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/memory"
+	"github.com/vincent/tarea/internal/memory"
 )
 
 func TestStore_ReadAppendReplaceAndCap(t *testing.T) {

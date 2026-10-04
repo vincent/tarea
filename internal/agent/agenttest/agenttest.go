@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 // Step is one scripted provider reply.

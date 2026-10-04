@@ -21,7 +21,7 @@
 </script>
 
 <header>
-  <strong>agentd</strong>
+  <strong>tarea</strong>
   <nav>
     {#each links as l (l.href)}
       <a href={l.href} aria-current={page.url.pathname === l.href ? 'page' : undefined}>{l.label}</a

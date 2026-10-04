@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vincent/agentd/internal/llm"
+	"github.com/vincent/tarea/internal/llm"
 )
 
 func newClient(url string) (*llm.OpenRouter, *[]time.Duration) {

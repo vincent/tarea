@@ -14,9 +14,9 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/vincent/agentd/internal/config"
-	"github.com/vincent/agentd/internal/runlog"
-	"github.com/vincent/agentd/internal/runner"
+	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/runlog"
+	"github.com/vincent/tarea/internal/runner"
 )
 
 // ErrBusy is returned by RunNow when the job is already running.
