@@ -4,6 +4,8 @@ A small scheduler for LLM jobs. Each job is one YAML file: a cron schedule, a pr
 
 It is deliberately **not** an agent framework. Code does the fetching, deduplication, budgeting and delivery; the model only does the judgment in between.
 
+If you are looking for something more mature, check https://umpteenth.dev
+
 ![tarea panel](https://raw.githubusercontent.com/vincent/tarea/main/screenshot.png)
 
 ```
