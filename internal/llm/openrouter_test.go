@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -123,6 +124,50 @@ func TestChat_NoRetryOn4xx(t *testing.T) {
 	var apiErr *llm.APIError
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusUnauthorized || calls.Load() != 1 {
 		t.Fatalf("err=%v calls=%d", err, calls.Load())
+	}
+}
+
+func TestChat_402RetriesWithAffordableMaxTokens(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	var second map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, `{"error":{"message":"This request requires more credits, or fewer max_tokens. You requested up to 65536 tokens, but can only afford 20000."}}`, http.StatusPaymentRequired)
+			return
+		}
+		_ = json.NewDecoder(r.Body).Decode(&second)
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	c, _ := newClient(srv.URL)
+	if _, err := c.Chat(context.Background(), llm.Request{Model: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || second["max_tokens"] != float64(19000) {
+		t.Fatalf("calls=%d max_tokens=%v", calls.Load(), second["max_tokens"])
+	}
+}
+
+func TestChat_402WithoutUsableCapFailsWithHint(t *testing.T) {
+	t.Parallel()
+	for name, body := range map[string]string{
+		"no number": `insufficient credits`,
+		"too small": `but can only afford 500.`,
+	} {
+		var calls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			http.Error(w, body, http.StatusPaymentRequired)
+		}))
+		c, _ := newClient(srv.URL)
+		_, err := c.Chat(context.Background(), llm.Request{Model: "m"})
+		srv.Close()
+		var apiErr *llm.APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != http.StatusPaymentRequired || calls.Load() != 1 || !strings.Contains(err.Error(), "max_tokens") {
+			t.Fatalf("%s: err=%v calls=%d", name, err, calls.Load())
+		}
 	}
 }
 

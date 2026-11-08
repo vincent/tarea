@@ -35,7 +35,7 @@ func TestParse_ValidAppliesDefaultsAndExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if j.MaxSteps != config.DefaultMaxSteps || j.BudgetUSD != config.DefaultBudgetUSD || j.Memory.MaxKB != config.DefaultMemoryKB {
+	if j.MaxSteps != config.DefaultMaxSteps || j.BudgetUSD != config.DefaultBudgetUSD || j.Memory.MaxKB != config.DefaultMemoryKB || j.MaxTokens != config.DefaultMaxTokens {
 		t.Fatalf("defaults not applied: %+v", j)
 	}
 	if got := j.MCP[0].Headers["Authorization"]; got != "Bearer k1" {

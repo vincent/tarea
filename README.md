@@ -54,7 +54,7 @@ model: anthropic/claude-sonnet-4.5
 fallbacks: [openai/gpt-5-mini]  # OpenRouter tries these if the model fails
 budget_usd: 0.10                # hard cap per run (default 0.10)
 max_steps: 8                    # LLM calls per run (default 8); the last one cannot call tools
-max_tokens: 0                   # output cap per model reply (default 0 = provider default)
+max_tokens: 8192                # output cap per model reply (default 8192; OpenRouter checks credits against it)
 enabled: true                   # default true
 prompt: |
   ...

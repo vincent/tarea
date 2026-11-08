@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -80,9 +81,57 @@ func (c *OpenRouter) Chat(ctx context.Context, req Request) (Response, error) {
 	}
 	raw, err := c.withRetry(ctx, "/chat/completions", body, maxResponseBytes)
 	if err != nil {
-		return Response{}, err
+		// 402 "can only afford N": retry once with a reply cap that fits the credits left.
+		capTokens, ok := affordableTokens(err, req.MaxTokens)
+		if !ok {
+			return Response{}, explain402(err)
+		}
+		req.MaxTokens = capTokens
+		if body, err = json.Marshal(c.buildBody(req)); err != nil {
+			return Response{}, fmt.Errorf("openrouter: encode request: %w", err)
+		}
+		if raw, err = c.withRetry(ctx, "/chat/completions", body, maxResponseBytes); err != nil {
+			return Response{}, explain402(err)
+		}
 	}
 	return parseResponse(raw)
+}
+
+// minRetryTokens is the smallest reply cap worth retrying with after a 402.
+const minRetryTokens = 1024
+
+var affordRe = regexp.MustCompile(`can only afford (\d+)`)
+
+// affordableTokens extracts the reply cap OpenRouter says the key can pay for
+// from a 402 error, minus a 5% margin. It reports false when err is not such an
+// error, the cap is too small to be useful, or it would not lower current.
+func affordableTokens(err error, current int) (int, bool) {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusPaymentRequired {
+		return 0, false
+	}
+	m := affordRe.FindStringSubmatch(apiErr.Message)
+	if m == nil {
+		return 0, false
+	}
+	n, convErr := strconv.Atoi(m[1])
+	if convErr != nil {
+		return 0, false
+	}
+	n -= n / 20
+	if n < minRetryTokens || (current > 0 && n >= current) {
+		return 0, false
+	}
+	return n, true
+}
+
+// explain402 adds an actionable hint to credit errors and passes others through.
+func explain402(err error) error {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Status == http.StatusPaymentRequired {
+		return fmt.Errorf("%w (OpenRouter credits or key limit too low: top up, raise the key limit, or lower the job's max_tokens)", err)
+	}
+	return err
 }
 
 // Speech synthesizes text to MP3 audio with the free Fish Audio model.
@@ -198,8 +247,8 @@ func parseRetryAfter(v string) time.Duration {
 
 func snippet(b []byte) string {
 	s := strings.TrimSpace(string(b))
-	if len(s) > 300 {
-		s = s[:300] + "..."
+	if len(s) > 600 {
+		s = s[:600] + "..."
 	}
 	return s
 }

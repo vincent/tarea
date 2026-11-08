@@ -17,7 +17,11 @@ import (
 
 // Defaults applied when a field is omitted.
 const (
-	DefaultMaxSteps  = 8
+	DefaultMaxSteps = 8
+	// DefaultMaxTokens caps each model reply. Left unset, OpenRouter reserves the
+	// model's maximum output (e.g. 65536) against the key's credit and answers 402
+	// when the key cannot afford it.
+	DefaultMaxTokens = 8192
 	DefaultBudgetUSD = 0.10
 	DefaultMemoryKB  = 64
 	DefaultMemoryFil = "memory.md"
@@ -107,6 +111,9 @@ func (j *Job) applyDefaults() {
 	}
 	if j.BudgetUSD == 0 {
 		j.BudgetUSD = DefaultBudgetUSD
+	}
+	if j.MaxTokens == 0 {
+		j.MaxTokens = DefaultMaxTokens
 	}
 	if j.Memory.File == "" {
 		j.Memory.File = DefaultMemoryFil
