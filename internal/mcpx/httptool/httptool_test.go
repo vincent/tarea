@@ -235,3 +235,23 @@ func TestJQ_InjectsHeader(t *testing.T) {
 		t.Fatalf("got %q %v", out, err)
 	}
 }
+
+func TestJQ_HTMLJSONLD(t *testing.T) {
+	t.Parallel()
+	page := `<html><script>var x=1</script><script type="application/ld+json">[{"name":"A","startDate":"2026-11-20"},{"name":"B","startDate":"2026-11-21"}]</script><p>noise</p></html>`
+	s, base := newSession(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(page))
+	}))
+	out, err := jq(s, base, `.[][] | "\(.name) \(.startDate)"`)
+	if err != nil || out != "\"A 2026-11-20\"\n\"B 2026-11-21\"" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+	plain, pbase := newSession(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<p>none</p>"))
+	}))
+	if _, err := jq(plain, pbase, "."); err == nil || !strings.Contains(err.Error(), "JSON-LD") {
+		t.Fatalf("want JSON-LD error, got %v", err)
+	}
+}

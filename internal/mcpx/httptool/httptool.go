@@ -4,6 +4,7 @@
 package httptool
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,9 @@ const maxPageBytes = 1 << 20
 // removed before conversion.
 var nonContent = regexp.MustCompile(`(?is)<!--.*?-->|<(script|style|noscript|template)\b.*?</(script|style|noscript|template)\s*>`)
 
+// ldJSON matches JSON-LD blocks embedded in HTML pages (schema.org data).
+var ldJSON = regexp.MustCompile(`(?is)<script\b[^>]*\btype\s*=\s*["']?application/ld\+json["']?[^>]*>(.*?)</script\s*>`)
+
 // maxJSONBytes caps the JSON document fetched by the jq tool.
 const maxJSONBytes = 10 << 20
 
@@ -47,7 +51,7 @@ const (
 const jqSchema = `{
   "type": "object",
   "properties": {
-    "url": {"type": "string", "description": "Absolute http(s) URL returning JSON"},
+    "url": {"type": "string", "description": "Absolute http(s) URL returning JSON, or an HTML page with JSON-LD"},
     "query": {"type": "string", "description": "jq filter, e.g. '.[] | .id'"}
   },
   "required": ["url", "query"]
@@ -123,7 +127,7 @@ func (s *Session) ListTools(context.Context) ([]mcpx.Tool, error) {
 		},
 		{
 			Name:        toolJQ,
-			Description: "GET a JSON document from an allowed host (up to 10 MB) and apply a jq filter to it. Returns one compact JSON value per line. Prefer this over request for large JSON.",
+			Description: "GET a JSON document from an allowed host (up to 10 MB) and apply a jq filter to it. For an HTML page, the filter input is the array of its JSON-LD (schema.org) blocks. Returns one compact JSON value per line. Prefer this over request/text for large pages or JSON.",
 			Schema:      json.RawMessage(jqSchema),
 		},
 	}, nil
@@ -202,9 +206,9 @@ func (s *Session) jq(ctx context.Context, rawURL, query string) (string, error) 
 	if len(res.body) > maxJSONBytes {
 		return "", fmt.Errorf("response exceeds %d MB", maxJSONBytes>>20)
 	}
-	var doc any
-	if err := json.Unmarshal(res.body, &doc); err != nil {
-		return "", fmt.Errorf("response is not valid JSON: %w", err)
+	doc, err := jsonDoc(res)
+	if err != nil {
+		return "", err
 	}
 	var out strings.Builder
 	iter := code.RunWithContext(ctx, doc)
@@ -231,6 +235,30 @@ func (s *Session) jq(ctx context.Context, rawURL, query string) (string, error) 
 		return "(no output)", nil
 	}
 	return strings.TrimSuffix(out.String(), "\n"), nil
+}
+
+// jsonDoc returns the value jq runs on: the body parsed as JSON, or for an HTML
+// page the array of its JSON-LD blocks (so a schema.org event list can be
+// filtered without sending the whole page to the model).
+func jsonDoc(res response) (any, error) {
+	if strings.Contains(strings.ToLower(res.contentType), "html") || bytes.HasPrefix(bytes.TrimSpace(res.body), []byte("<")) {
+		blocks := []any{}
+		for _, m := range ldJSON.FindAllSubmatch(res.body, -1) {
+			var v any
+			if json.Unmarshal(m[1], &v) == nil {
+				blocks = append(blocks, v)
+			}
+		}
+		if len(blocks) == 0 {
+			return nil, errors.New("HTML page has no JSON-LD data; use the text tool")
+		}
+		return blocks, nil
+	}
+	var doc any
+	if err := json.Unmarshal(res.body, &doc); err != nil {
+		return nil, fmt.Errorf("response is not valid JSON: %w", err)
+	}
+	return doc, nil
 }
 
 // response is what is left of an http.Response once its body is consumed.
