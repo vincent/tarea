@@ -69,7 +69,8 @@
     notice = null;
     try {
       await api.decide(name, id, action);
-      notice = action === 'accept' ? 'Applied. The scheduler reloads the job shortly.' : 'Rejected.';
+      notice =
+        action === 'accept' ? 'Applied. The scheduler reloads the job shortly.' : 'Rejected.';
       await load(name);
     } catch (e) {
       notice = e instanceof ApiError ? e.message : String(e);
@@ -129,7 +130,8 @@
             <pre class="mono old">{show(c.from)}</pre>
             <pre class="mono new">{show(c.to)}</pre>
           {:else}
-            <span class="mono old">{show(c.from)}</span> → <span class="mono new">{show(c.to)}</span>
+            <span class="mono old">{show(c.from)}</span> →
+            <span class="mono new">{show(c.to)}</span>
           {/if}
         </div>
       {/each}

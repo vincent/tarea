@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -271,20 +272,21 @@ func truncDetail(step, maxSteps int, resp llm.Response, hasCalls, last bool) str
 	case last:
 		what = "final answer (forced-text last step)"
 	}
-	cap := "provider default"
+	limit := "provider default"
 	if resp.MaxTokens > 0 {
-		cap = fmt.Sprintf("%d", resp.MaxTokens)
+		limit = strconv.Itoa(resp.MaxTokens)
 	}
-	s := fmt.Sprintf("step %d/%d, %s cut at the output cap (cap %s, %d tokens generated", step, maxSteps, what, cap, resp.Usage.CompletionTokens)
+	s := fmt.Sprintf("step %d/%d, %s cut at the output cap (cap %s, %d tokens generated", step, maxSteps, what, limit, resp.Usage.CompletionTokens)
 	if resp.ReasoningTokens > 0 {
 		s += fmt.Sprintf(", %d of them reasoning", resp.ReasoningTokens)
 	}
 	s += ")"
-	if resp.LoweredFrom > 0 {
+	switch {
+	case resp.LoweredFrom > 0:
 		s += fmt.Sprintf("; cap lowered from %d by the OpenRouter credit limit (402): top up credits or lower max_tokens", resp.LoweredFrom)
-	} else if resp.ReasoningTokens > 0 {
+	case resp.ReasoningTokens > 0:
 		s += "; reasoning shares the cap: raise max_tokens"
-	} else {
+	default:
 		s += "; raise max_tokens or shorten the output"
 	}
 	return s
