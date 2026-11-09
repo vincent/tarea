@@ -246,7 +246,7 @@ func (im *Improver) askLLM(ctx context.Context, model string, j config.Job, st S
 		return nil, "", llm.Usage{}, errors.New("improve: no LLM provider configured")
 	}
 	statsJSON, _ := json.MarshalIndent(st, "", "  ")
-	var tools []string
+	tools := make([]string, 0, len(j.MCP))
 	for _, m := range j.MCP {
 		target := m.Name
 		if m.Builtin != "" {
