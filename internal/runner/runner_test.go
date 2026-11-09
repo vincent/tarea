@@ -193,6 +193,22 @@ func TestRun_PartialRunIsDeliveredWithNotice(t *testing.T) {
 	}
 }
 
+func TestRun_TruncatedRunBannerExplainsCause(t *testing.T) {
+	t.Parallel()
+	step := agenttest.Text("half a list", 0)
+	step.Resp.FinishReason = "length"
+	step.Resp.MaxTokens = 8192
+	e := newEnv(t, step)
+
+	sum, err := e.r.Run(context.Background(), "gigs", runner.TriggerCron)
+	if err != nil || sum.Stop != "truncated" || !strings.Contains(sum.StopDetail, "cap 8192") {
+		t.Fatalf("sum=%+v err=%v", sum, err)
+	}
+	if len(e.snk.msgs) != 1 || !strings.HasPrefix(e.snk.msgs[0].Text, "(partial run, stopped: truncated - step 1/") {
+		t.Fatalf("msgs = %+v", e.snk.msgs)
+	}
+}
+
 func TestRun_SinkFailureMarksRunAsError(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t, agenttest.Text("hello", 0))

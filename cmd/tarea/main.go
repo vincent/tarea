@@ -3,6 +3,7 @@
 //
 //	tarea serve    [--data DIR] [--addr HOST:PORT]
 //	tarea run      [--data DIR] [--dry-run] JOB
+//	tarea improve  [--data DIR] [--model M] [--window N] [--apply ID | --reject ID] JOB
 //	tarea validate [--data DIR]
 //	tarea version
 package main
@@ -23,6 +24,7 @@ const usage = `tarea - scheduled LLM jobs with MCP tools
 Usage:
   tarea serve    [--data DIR] [--addr HOST:PORT]   run the scheduler and the panel
   tarea run      [--data DIR] [--dry-run] JOB      run one job now
+  tarea improve  [--data DIR] [--apply ID|--reject ID] JOB   propose (or apply) a better job definition
   tarea validate [--data DIR]                      check every job file
   tarea version
 
@@ -43,6 +45,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = cmdServe(rest, stderr)
 	case "run":
 		err = cmdRun(rest, stdout, stderr)
+	case "improve":
+		err = cmdImprove(rest, stdout, stderr)
 	case "validate":
 		err = cmdValidate(rest, stdout, stderr)
 	case "version":

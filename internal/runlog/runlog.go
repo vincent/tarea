@@ -44,6 +44,7 @@ type Summary struct {
 	EndedAt          time.Time `json:"ended_at"`
 	Status           Status    `json:"status"`
 	Stop             string    `json:"stop,omitempty"`
+	StopDetail       string    `json:"stop_detail,omitempty"`
 	Model            string    `json:"model,omitempty"`
 	Steps            int       `json:"steps"`
 	ToolCalls        int       `json:"tool_calls"`

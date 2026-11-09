@@ -380,6 +380,30 @@ func TestRun_TruncatedFinalReplyIsMarked(t *testing.T) {
 	if p.Requests[0].MaxTokens != 128 {
 		t.Fatalf("max tokens not forwarded: %d", p.Requests[0].MaxTokens)
 	}
+	if !strings.Contains(res.Detail, "step 1/") || !strings.Contains(res.Detail, "final answer") {
+		t.Fatalf("detail lacks where: %q", res.Detail)
+	}
+}
+
+func TestRun_TruncationDetailExplainsWhy(t *testing.T) {
+	t.Parallel()
+	step := agenttest.Text("cut", 0)
+	step.Resp.FinishReason = "length"
+	step.Resp.MaxTokens = 1843
+	step.Resp.LoweredFrom = 8192
+	step.Resp.Usage.CompletionTokens = 1843
+	step.Resp.ReasoningTokens = 1500
+	p := &agenttest.Provider{Steps: []agenttest.Step{step}}
+
+	res, err := agent.Run(context.Background(), spec(), agent.Deps{Provider: p})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"cap 1843", "1843 tokens generated", "1500 of them reasoning", "lowered from 8192", "402"} {
+		if !strings.Contains(res.Detail, want) {
+			t.Fatalf("detail %q missing %q", res.Detail, want)
+		}
+	}
 }
 
 func TestRun_TruncatedToolCallsAreNotExecuted(t *testing.T) {

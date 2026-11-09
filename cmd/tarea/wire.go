@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/improve"
 	"github.com/vincent/tarea/internal/llm"
 	"github.com/vincent/tarea/internal/mcpx/httptool"
 	"github.com/vincent/tarea/internal/mcpx/sdkdial"
@@ -93,4 +94,19 @@ func (a *app) readMemory(j config.Job) (string, error) {
 		return "", fmt.Errorf("read memory: %w", err)
 	}
 	return text, nil
+}
+
+// improver builds the job improver. The analysis model is $TAREA_IMPROVE_MODEL
+// or, when unset, the job's own model.
+func (a *app) improver() (*improve.Improver, error) {
+	key, ok := a.lookup("OPENROUTER_API_KEY")
+	if !ok || key == "" {
+		return nil, errors.New("OPENROUTER_API_KEY is not set (environment or <data>/.env)")
+	}
+	provider := llm.NewOpenRouter(key)
+	provider.HTTP = &http.Client{Timeout: 3 * time.Minute}
+	model, _ := a.lookup("TAREA_IMPROVE_MODEL")
+	return &improve.Improver{
+		DataDir: a.dataDir, Jobs: a.jobs, Runs: a.runs, Provider: provider, Model: model, Now: time.Now,
+	}, nil
 }

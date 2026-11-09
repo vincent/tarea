@@ -58,8 +58,12 @@ func cmdServe(args []string, stderr io.Writer) error {
 	go sched.Watch(ctx, *reload, a.jobs)
 	go prune(ctx, a, *keep)
 
+	var imp api.Improver
+	if im, ierr := a.improver(); ierr == nil { // runner() above already proved the key exists.
+		imp = im
+	}
 	handler := api.New(api.Deps{
-		Jobs: a.jobs, Runs: a.runs, Control: sched, Memory: a.readMemory,
+		Jobs: a.jobs, Runs: a.runs, Control: sched, Improve: imp, Memory: a.readMemory,
 		UI: webui.FS(), Version: version, Started: time.Now(), Log: a.log,
 	})
 	srv := &http.Server{

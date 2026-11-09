@@ -97,6 +97,8 @@ type Result struct {
 	ToolCalls int
 	Stop      StopReason
 	Model     string
+	// Detail explains a truncation: where it happened and why. Empty otherwise.
+	Detail string
 }
 
 // Run executes the loop. Unrecoverable provider errors and cancellation are
@@ -220,6 +222,10 @@ func (l *loop) run(ctx context.Context) (Result, error) {
 
 		calls := resp.Message.ToolCalls
 		truncated := resp.FinishReason == finishLength
+		if truncated {
+			l.res.Detail = truncDetail(step, l.spec.MaxSteps, resp, len(calls) > 0, last)
+			l.deps.Log.Warn("model reply truncated by output limit", "detail", l.res.Detail)
+		}
 		switch {
 		case len(calls) == 0 && truncated:
 			return l.finish(StopTruncated, resp.Message.Content+truncatedMarker), nil
@@ -256,7 +262,38 @@ func (l *loop) overBudget() bool {
 	return l.spec.BudgetUSD > 0 && l.res.Usage.CostUSD >= l.spec.BudgetUSD
 }
 
+// truncDetail says where a reply hit the output cap and why the cap was what it was.
+func truncDetail(step, maxSteps int, resp llm.Response, hasCalls, last bool) string {
+	what := "final answer"
+	switch {
+	case hasCalls:
+		what = "tool-call arguments (calls skipped)"
+	case last:
+		what = "final answer (forced-text last step)"
+	}
+	cap := "provider default"
+	if resp.MaxTokens > 0 {
+		cap = fmt.Sprintf("%d", resp.MaxTokens)
+	}
+	s := fmt.Sprintf("step %d/%d, %s cut at the output cap (cap %s, %d tokens generated", step, maxSteps, what, cap, resp.Usage.CompletionTokens)
+	if resp.ReasoningTokens > 0 {
+		s += fmt.Sprintf(", %d of them reasoning", resp.ReasoningTokens)
+	}
+	s += ")"
+	if resp.LoweredFrom > 0 {
+		s += fmt.Sprintf("; cap lowered from %d by the OpenRouter credit limit (402): top up credits or lower max_tokens", resp.LoweredFrom)
+	} else if resp.ReasoningTokens > 0 {
+		s += "; reasoning shares the cap: raise max_tokens"
+	} else {
+		s += "; raise max_tokens or shorten the output"
+	}
+	return s
+}
+
 func (l *loop) finish(reason StopReason, final string) Result {
+	if reason != StopTruncated && reason != StopToolErrors {
+		l.res.Detail = ""
+	}
 	l.res.Stop = reason
 	l.res.Final = strings.TrimSpace(final)
 	return l.res

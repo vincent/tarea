@@ -3,7 +3,7 @@
   import { api, ApiError } from '#lib/api.ts';
   import { formatCost, formatDuration, formatTokens, relativeTime } from '#lib/format.ts';
   import StatusBadge from '#lib/StatusBadge.svelte';
-  import type { JobDetail, MemoryView, RunSummary } from '#lib/types.ts';
+  import type { JobDetail, MemoryView, Proposal, RunSummary } from '#lib/types.ts';
 
   let job = $state<JobDetail | null>(null);
   let runs = $state<RunSummary[]>([]);
@@ -11,12 +11,19 @@
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
   let starting = $state(false);
+  let proposals = $state<Proposal[]>([]);
+  let analysing = $state(false);
 
   let name = $derived(page.params.name ?? '');
 
   async function load(n: string) {
     try {
-      [job, runs, memory] = await Promise.all([api.job(n), api.jobRuns(n), api.memory(n)]);
+      [job, runs, memory, proposals] = await Promise.all([
+        api.job(n),
+        api.jobRuns(n),
+        api.memory(n),
+        api.proposals(n)
+      ]);
       error = null;
     } catch (e) {
       error = e instanceof ApiError && e.status === 404 ? 'Job not found.' : String(e);
@@ -43,6 +50,35 @@
       starting = false;
     }
   }
+
+  async function improve() {
+    analysing = true;
+    notice = null;
+    try {
+      const res = await api.improve(name);
+      notice = res.proposal ? 'Proposal ready below.' : `Nothing to improve: ${res.message ?? ''}`;
+      await load(name);
+    } catch (e) {
+      notice = e instanceof ApiError ? e.message : String(e);
+    } finally {
+      analysing = false;
+    }
+  }
+
+  async function decide(id: string, action: 'accept' | 'reject') {
+    notice = null;
+    try {
+      await api.decide(name, id, action);
+      notice = action === 'accept' ? 'Applied. The scheduler reloads the job shortly.' : 'Rejected.';
+      await load(name);
+    } catch (e) {
+      notice = e instanceof ApiError ? e.message : String(e);
+    }
+  }
+
+  function show(v: unknown): string {
+    return Array.isArray(v) ? v.join(', ') : String(v);
+  }
 </script>
 
 <p><a href="/">← Jobs</a></p>
@@ -55,9 +91,14 @@
       {job.name}
       {#if !job.enabled}<StatusBadge status="disabled" />{/if}
     </h1>
-    <button class="primary" onclick={runNow} disabled={starting || job.running}>
-      {job.running ? 'Running…' : 'Run now'}
-    </button>
+    <div class="actions">
+      <button onclick={improve} disabled={analysing}>
+        {analysing ? 'Analysing…' : 'Improve'}
+      </button>
+      <button class="primary" onclick={runNow} disabled={starting || job.running}>
+        {job.running ? 'Running…' : 'Run now'}
+      </button>
+    </div>
   </div>
   {#if notice}<p class="muted">{notice}</p>{/if}
 
@@ -76,6 +117,29 @@
       </div>
     {/if}
   </div>
+
+  {#each proposals.filter((p) => p.status === 'pending') as p (p.id)}
+    <h2>Proposed improvement</h2>
+    <div class="card">
+      <p>{p.rationale}</p>
+      {#each p.changes as c (c.field)}
+        <div class="change">
+          <span class="mono">{c.field}</span>
+          {#if c.field === 'prompt'}
+            <pre class="mono old">{show(c.from)}</pre>
+            <pre class="mono new">{show(c.to)}</pre>
+          {:else}
+            <span class="mono old">{show(c.from)}</span> → <span class="mono new">{show(c.to)}</span>
+          {/if}
+        </div>
+      {/each}
+      <p class="muted">Analysed by {p.analysed_by} · {formatCost(p.cost_usd)}</p>
+      <div class="actions">
+        <button onclick={() => decide(p.id, 'reject')}>Reject</button>
+        <button class="primary" onclick={() => decide(p.id, 'accept')}>Accept</button>
+      </div>
+    </div>
+  {/each}
 
   <h2>Runs</h2>
   <div class="card scroll-x">
@@ -137,6 +201,17 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+  .actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .change {
+    margin: 0.5rem 0;
+  }
+  .old {
+    color: var(--muted);
+    text-decoration: line-through;
   }
   .meta {
     display: grid;

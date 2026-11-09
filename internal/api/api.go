@@ -3,6 +3,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/vincent/tarea/internal/config"
+	"github.com/vincent/tarea/internal/improve"
 	"github.com/vincent/tarea/internal/runlog"
 	"github.com/vincent/tarea/internal/scheduler"
 )
@@ -40,11 +42,20 @@ type Control interface {
 	Running(name string) bool
 }
 
-// Deps are the handler's collaborators. UI may be nil (API only).
+// Improver proposes job improvements (improve.Improver satisfies it).
+type Improver interface {
+	Propose(ctx context.Context, name string) (improve.Proposal, error)
+	List(job string) ([]improve.Proposal, error)
+	Accept(job, id string) (improve.Proposal, error)
+	Reject(job, id string) (improve.Proposal, error)
+}
+
+// Deps are the handler's collaborators. UI and Improve may be nil.
 type Deps struct {
 	Jobs    Jobs
 	Runs    Runs
 	Control Control
+	Improve Improver
 	Memory  func(job config.Job) (string, error)
 	UI      fs.FS
 	Version string
@@ -79,6 +90,10 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/jobs/{name}/runs/{id}", s.getRun)
 	mux.HandleFunc("GET /api/jobs/{name}/memory", s.getMemory)
 	mux.HandleFunc("POST /api/jobs/{name}/run", s.runNow)
+	mux.HandleFunc("POST /api/jobs/{name}/improve", s.improve)
+	mux.HandleFunc("GET /api/jobs/{name}/proposals", s.proposals)
+	mux.HandleFunc("POST /api/jobs/{name}/proposals/{id}/accept", s.decide(true))
+	mux.HandleFunc("POST /api/jobs/{name}/proposals/{id}/reject", s.decide(false))
 	mux.HandleFunc("GET /api/runs", s.allRuns)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) { s.fail(w, http.StatusNotFound, "not found") })
 	mux.Handle("/", s.ui())
@@ -325,6 +340,12 @@ func (s *server) mapErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, config.ErrJobNotFound), errors.Is(err, runlog.ErrNotFound):
 		s.fail(w, http.StatusNotFound, "not found")
+	case errors.Is(err, improve.ErrProposalNotFound):
+		s.fail(w, http.StatusNotFound, "not found")
+	case errors.Is(err, improve.ErrNoChanges):
+		s.fail(w, http.StatusUnprocessableEntity, "nothing to improve")
+	case errors.Is(err, improve.ErrStale), errors.Is(err, improve.ErrNotPending):
+		s.fail(w, http.StatusConflict, err.Error())
 	case errors.Is(err, scheduler.ErrBusy):
 		s.fail(w, http.StatusConflict, "job already running")
 	case errors.Is(err, scheduler.ErrStopping):
@@ -386,4 +407,88 @@ func (s *server) ui() http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// --- improvement proposals --------------------------------------------------
+
+// improveTimeout bounds one LLM analysis; the server's write timeout is shorter.
+const improveTimeout = 3 * time.Minute
+
+func (s *server) improve(w http.ResponseWriter, r *http.Request) {
+	if s.Improve == nil {
+		s.fail(w, http.StatusNotFound, "improve is not enabled")
+		return
+	}
+	j, ok := s.job(w, r)
+	if !ok {
+		return
+	}
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(improveTimeout + 10*time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), improveTimeout)
+	defer cancel()
+	p, err := s.Improve.Propose(ctx, j.Name)
+	if errors.Is(err, improve.ErrNoChanges) {
+		// Not an error for the panel: show the model's reasoning.
+		s.json(w, http.StatusOK, map[string]any{"proposal": nil, "message": p.Rationale})
+		return
+	}
+	if err != nil {
+		s.mapErr(w, err)
+		return
+	}
+	s.json(w, http.StatusCreated, map[string]any{"proposal": proposalView(p)})
+}
+
+func (s *server) proposals(w http.ResponseWriter, r *http.Request) {
+	if s.Improve == nil {
+		s.json(w, http.StatusOK, []improve.Proposal{})
+		return
+	}
+	j, ok := s.job(w, r)
+	if !ok {
+		return
+	}
+	list, err := s.Improve.List(j.Name)
+	if err != nil {
+		s.mapErr(w, err)
+		return
+	}
+	if list == nil {
+		list = []improve.Proposal{}
+	}
+	for i := range list {
+		list[i] = proposalView(list[i])
+	}
+	s.json(w, http.StatusOK, list)
+}
+
+func (s *server) decide(accept bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Improve == nil {
+			s.fail(w, http.StatusNotFound, "improve is not enabled")
+			return
+		}
+		j, ok := s.job(w, r)
+		if !ok {
+			return
+		}
+		var p improve.Proposal
+		var err error
+		if accept {
+			p, err = s.Improve.Accept(j.Name, r.PathValue("id"))
+		} else {
+			p, err = s.Improve.Reject(j.Name, r.PathValue("id"))
+		}
+		if err != nil {
+			s.mapErr(w, err)
+			return
+		}
+		s.json(w, http.StatusOK, proposalView(p))
+	}
+}
+
+// proposalView drops the full YAML: the job file may hold literal credentials the panel never shows.
+func proposalView(p improve.Proposal) improve.Proposal {
+	p.NewYAML, p.BaseSHA = "", ""
+	return p
 }

@@ -142,11 +142,28 @@ func TestChat_402RetriesWithAffordableMaxTokens(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := newClient(srv.URL)
-	if _, err := c.Chat(context.Background(), llm.Request{Model: "m"}); err != nil {
+	resp, err := c.Chat(context.Background(), llm.Request{Model: "m", MaxTokens: 65536})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if resp.MaxTokens != 19000 || resp.LoweredFrom != 65536 {
+		t.Fatalf("cap not reported: sent=%d lowered_from=%d", resp.MaxTokens, resp.LoweredFrom)
 	}
 	if calls.Load() != 2 || second["max_tokens"] != float64(19000) {
 		t.Fatalf("calls=%d max_tokens=%v", calls.Load(), second["max_tokens"])
+	}
+}
+
+func TestChat_ReportsSentCapAndReasoningTokens(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"x"}}],"usage":{"completion_tokens":8192,"completion_tokens_details":{"reasoning_tokens":7000}}}`))
+	}))
+	defer srv.Close()
+	c, _ := newClient(srv.URL)
+	resp, err := c.Chat(context.Background(), llm.Request{Model: "m", MaxTokens: 8192})
+	if err != nil || resp.MaxTokens != 8192 || resp.LoweredFrom != 0 || resp.ReasoningTokens != 7000 {
+		t.Fatalf("resp=%+v err=%v", resp, err)
 	}
 }
 

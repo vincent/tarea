@@ -83,3 +83,25 @@ export interface MemoryView {
   file: string;
   content: string;
 }
+
+export interface Change {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+export interface Proposal {
+  id: string;
+  job: string;
+  created_at: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  analysed_by?: string;
+  cost_usd: number;
+  rationale: string;
+  changes: Change[];
+}
+
+export interface ImproveResult {
+  proposal: Proposal | null;
+  message?: string;
+}

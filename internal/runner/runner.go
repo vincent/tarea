@@ -215,6 +215,7 @@ func (r *Runner) fill(rec *runlog.Record, res agent.Result, runErr error) {
 	rec.CompletionTokens = res.Usage.CompletionTokens
 	rec.CostUSD = res.Usage.CostUSD
 	rec.Stop = string(res.Stop)
+	rec.StopDetail = res.Detail
 	rec.Output = res.Final
 	rec.Messages = res.Messages
 	rec.Preview = runlog.Preview(res.Final)
@@ -238,7 +239,11 @@ func (r *Runner) deliver(ctx context.Context, job config.Job, rec *runlog.Record
 		if text == "" {
 			text = "(no final message was produced)"
 		}
-		text = fmt.Sprintf("(partial run, stopped: %s)\n\n%s", rec.Stop, text)
+		banner := "stopped: " + rec.Stop
+		if rec.StopDetail != "" {
+			banner += " - " + rec.StopDetail
+		}
+		text = fmt.Sprintf("(partial run, %s)\n\n%s", banner, text)
 	} else if text == "" || text == agent.NothingNew {
 		return nil
 	}

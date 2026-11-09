@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { api, ApiError } from '#lib/api.ts';
+  import { downloadJSON } from '#lib/download.ts';
   import { formatCost, formatDuration, formatTokens } from '#lib/format.ts';
   import StatusBadge from '#lib/StatusBadge.svelte';
   import type { RunRecord } from '#lib/types.ts';
@@ -23,6 +24,10 @@
         error = e instanceof ApiError && e.status === 404 ? 'Run not found.' : String(e);
       });
   });
+
+  function download() {
+    if (run) downloadJSON(`${name}-${run.id}.json`, run);
+  }
 </script>
 
 <p><a href="/jobs/{name}">← {name}</a></p>
@@ -30,7 +35,10 @@
 {#if error}
   <p class="error">{error}</p>
 {:else if run}
-  <h1>Run <span class="mono">{run.id}</span></h1>
+  <div class="head">
+    <h1>Run <span class="mono">{run.id}</span></h1>
+    <button onclick={download}>Download run</button>
+  </div>
   <div class="card meta">
     <StatusBadge status={run.status} />
     <span>{run.trigger}</span>
@@ -68,6 +76,12 @@
 {/if}
 
 <style>
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+  }
   .meta {
     display: flex;
     flex-wrap: wrap;

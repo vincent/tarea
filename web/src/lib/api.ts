@@ -1,4 +1,13 @@
-import type { Health, JobDetail, JobView, MemoryView, RunRecord, RunSummary } from './types';
+import type {
+  Health,
+  ImproveResult,
+  JobDetail,
+  JobView,
+  MemoryView,
+  Proposal,
+  RunRecord,
+  RunSummary
+} from './types';
 
 export class ApiError extends Error {
   constructor(
@@ -63,7 +72,14 @@ export function createApi(
     memory: (name: string) => request<MemoryView>(`/api/jobs/${enc(name)}/memory`),
     allRuns: (limit = 500) => request<RunSummary[]>(`/api/runs?limit=${limit}`),
     runNow: (name: string) =>
-      request<{ status: string }>(`/api/jobs/${enc(name)}/run`, { method: 'POST' })
+      request<{ status: string }>(`/api/jobs/${enc(name)}/run`, { method: 'POST' }),
+    improve: (name: string) =>
+      request<ImproveResult>(`/api/jobs/${enc(name)}/improve`, { method: 'POST' }),
+    proposals: (name: string) => request<Proposal[]>(`/api/jobs/${enc(name)}/proposals`),
+    decide: (name: string, id: string, action: 'accept' | 'reject') =>
+      request<Proposal>(`/api/jobs/${enc(name)}/proposals/${enc(id)}/${action}`, {
+        method: 'POST'
+      })
   };
 }
 

@@ -79,6 +79,7 @@ func (c *OpenRouter) Chat(ctx context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, fmt.Errorf("openrouter: encode request: %w", err)
 	}
+	sentCap, loweredFrom := req.MaxTokens, 0
 	raw, err := c.withRetry(ctx, "/chat/completions", body, maxResponseBytes)
 	if err != nil {
 		// 402 "can only afford N": retry once with a reply cap that fits the credits left.
@@ -86,6 +87,7 @@ func (c *OpenRouter) Chat(ctx context.Context, req Request) (Response, error) {
 		if !ok {
 			return Response{}, explain402(err)
 		}
+		loweredFrom, sentCap = req.MaxTokens, capTokens
 		req.MaxTokens = capTokens
 		if body, err = json.Marshal(c.buildBody(req)); err != nil {
 			return Response{}, fmt.Errorf("openrouter: encode request: %w", err)
@@ -94,7 +96,12 @@ func (c *OpenRouter) Chat(ctx context.Context, req Request) (Response, error) {
 			return Response{}, explain402(err)
 		}
 	}
-	return parseResponse(raw)
+	resp, err := parseResponse(raw)
+	if err != nil {
+		return Response{}, err
+	}
+	resp.MaxTokens, resp.LoweredFrom = sentCap, loweredFrom
+	return resp, nil
 }
 
 // minRetryTokens is the smallest reply cap worth retrying with after a 402.
@@ -307,6 +314,9 @@ type wireResponse struct {
 		PromptTokens     int     `json:"prompt_tokens"`
 		CompletionTokens int     `json:"completion_tokens"`
 		Cost             float64 `json:"cost"`
+		Details          struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
 	} `json:"usage"`
 	Error *struct {
 		Code    any    `json:"code"`
@@ -362,6 +372,7 @@ func parseResponse(raw []byte) (Response, error) {
 	out := Response{Message: msg, Model: w.Model, FinishReason: ch.FinishReason}
 	if w.Usage != nil {
 		out.Usage = Usage{PromptTokens: w.Usage.PromptTokens, CompletionTokens: w.Usage.CompletionTokens, CostUSD: w.Usage.Cost}
+		out.ReasoningTokens = w.Usage.Details.ReasoningTokens
 	}
 	return out, nil
 }

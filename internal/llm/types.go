@@ -67,4 +67,12 @@ type Response struct {
 	Usage        Usage
 	Model        string // model that actually served the call (after fallbacks).
 	FinishReason string
+
+	// MaxTokens is the output cap actually sent (0 = provider default).
+	MaxTokens int
+	// LoweredFrom is the cap originally requested when a 402 forced it down to
+	// MaxTokens; 0 when the cap was not lowered.
+	LoweredFrom int
+	// ReasoningTokens is the part of the completion spent on hidden reasoning, when reported.
+	ReasoningTokens int
 }
